@@ -9,6 +9,9 @@ description = "Archival book/document page splitting, orientation and cropping a
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
+[project.scripts]
+folio = "folio.cli:main"
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
