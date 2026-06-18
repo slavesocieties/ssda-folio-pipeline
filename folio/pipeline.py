@@ -71,6 +71,11 @@ class FolioPipeline:
             if not boxes:
                 res.error = "no_page_detected"
                 return res
+            # count says two folios but detection under-segmented to one box:
+            # trust the (reliable) count head and halve that box so the gutter
+            # split below still runs (the seam search refines the true spine).
+            if count == PageCount.TWO and len(boxes) == 1:
+                boxes = _halve_box(boxes[0])
             masks = self.segmenter.segment(image, boxes)
 
             # Stage 2 global skew estimate (from union mask) -> recorded only;
@@ -243,6 +248,16 @@ class FolioPipeline:
         if tasks:
             await asyncio.gather(*tasks)
         return stats
+
+
+def _halve_box(b: PageBox) -> List[PageBox]:
+    """Split one page box into left/right halves at its horizontal midpoint
+    (used when a two-folio spread was detected as a single box; the seam search
+    then refines the true gutter inside the overlap)."""
+    mid = (b.x1 + b.x2) // 2
+    ov = int(0.04 * (b.x2 - b.x1))         # small overlap so the seam can wander
+    return [PageBox(b.x1, b.y1, min(mid + ov, b.x2), b.y2, b.score),
+            PageBox(max(mid - ov, b.x1), b.y1, b.x2, b.y2, b.score)]
 
 
 def _stem(key: str) -> str:
