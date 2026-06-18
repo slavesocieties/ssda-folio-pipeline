@@ -20,6 +20,29 @@ python -m folio.training.eval --task count \
 # orientation val accuracy is printed each epoch during training
 ```
 
+## End-to-end pipeline (labelled, in-distribution)
+
+`tools/evaluate.py` runs the WHOLE pipeline per image and scores it against
+labels (the labelled folders, with some singles synthetically rotated to 90/270
+to exercise the landscape pre-pass). On 200 images:
+
+| Metric | Result |
+|---|---|
+| Folio count | **100%** |
+| Two-folio split (==2 folios) | **90%** |
+| Orientation upright (overall) | **98.8%** |
+| — upright input (stay upright) | 100% |
+| — upside-down input (flip 180) | 97.5% |
+| — landscape 90/270 (pre-pass) | 100% |
+
+> This used to read ~50% before two fixes: (1) the pipeline fed the 4-way head
+> the *tight oriented crop*, which flips its 0-vs-180 call — it now decides on a
+> full-page view (the head's training framing); (2) the harness was
+> double-rotating the already-180 `upside_down` files. Reproduce:
+> `python tools/evaluate.py --from-folders ../train_data --n 80 --landscape --legacy-weights ../legacy_weights`
+
+These are **in-distribution** (same volumes as training). Cross-source below.
+
 ## Cross-source (the 25 sample scans, new volumes)
 
 End-to-end with the production hybrid config:
