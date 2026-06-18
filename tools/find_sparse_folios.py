@@ -33,6 +33,26 @@ def _text_len(rec) -> tuple[int, int]:
     return chars, words
 
 
+def _load_records(text: str):
+    """Parse a transcription file. Handles clean JSON and the markdown-escaped
+    text the Drive connector returns (\\[ \\_ etc.), falling back to a regex
+    extraction of file/transcription pairs."""
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = text.replace("\\[", "[").replace("\\]", "]").replace("\\_", "_")
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    recs = []
+    pat = re.compile(r'"file"\s*:\s*"([^"]+)".*?"transcription"\s*:\s*"((?:[^"\\]|\\.)*)"', re.S)
+    for m in pat.finditer(text):
+        recs.append({"file": m.group(1), "transcription": m.group(2)})
+    return recs
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("json_dir", help="folder of per-volume transcription .json files")
@@ -42,10 +62,10 @@ def main():
     args = ap.parse_args()
 
     rows = []
-    files = sorted(Path(args.json_dir).glob("*.json"))
+    files = sorted(Path(args.json_dir).glob("*.json")) + sorted(Path(args.json_dir).glob("*.txt"))
     for jf in files:
         try:
-            data = json.loads(jf.read_text(encoding="utf-8"))
+            data = _load_records(jf.read_text(encoding="utf-8"))
         except Exception as e:
             print(f"skip {jf.name}: {e}")
             continue
