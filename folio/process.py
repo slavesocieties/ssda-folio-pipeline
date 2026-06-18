@@ -166,10 +166,20 @@ def write_image_result(out: Path, source_name: str, stem: str, res,
         stats.manifest.append(_row(source_name, rel, res, f))
 
 
-def list_images(input_path: Path) -> List[Path]:
-    if input_path.is_file():
-        return [input_path]
-    return sorted(p for p in input_path.iterdir() if p.suffix.lower() in IMAGE_EXTS)
+def list_images(input_path) -> List[Path]:
+    """Image files under a path, or expanded from a list of files/folders
+    (used by the GUI for drag-and-drop of mixed items)."""
+    if isinstance(input_path, (list, tuple)):
+        out: List[Path] = []
+        for item in input_path:
+            out.extend(list_images(item))
+        return out
+    p = Path(input_path)
+    if p.is_file():
+        return [p] if p.suffix.lower() in IMAGE_EXTS else []
+    if p.is_dir():
+        return sorted(q for q in p.iterdir() if q.suffix.lower() in IMAGE_EXTS)
+    return []
 
 
 def _ensure_dirs(out: Path) -> None:
@@ -214,7 +224,6 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
     ``on_start(n, mode, device)`` and ``on_item(i, n, name, res)`` are optional
     progress callbacks (used by the GUI and CLI).
     """
-    input_path = Path(input_path)
     out = Path(out)
     _ensure_dirs(out)
     files = list_images(input_path)
@@ -225,7 +234,9 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
                  if not (out / "folios" / f"{p.stem}.jpg").exists()
                  and not (out / "folios" / f"{p.stem}-A.jpg").exists()]
 
-    legacy = find_legacy_weights(legacy, str(input_path))
+    discover_hint = (input_path if isinstance(input_path, (str, Path))
+                     else (files[0] if files else None))
+    legacy = find_legacy_weights(legacy, str(discover_hint) if discover_hint else None)
     stats = RunStats(images=len(files))
 
     if jobs and jobs > 1 and len(files) > 1:

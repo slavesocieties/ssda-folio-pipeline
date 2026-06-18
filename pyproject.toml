@@ -11,6 +11,7 @@ dynamic = ["dependencies"]
 
 [project.scripts]
 folio = "folio.cli:main"
+folio-gui = "folio.gui:main"
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
