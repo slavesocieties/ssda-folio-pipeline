@@ -88,6 +88,25 @@ class S3Streamer:
                         await queue.put(key)   # blocks when full -> backpressure
         await queue.put(None)  # sentinel
 
+    async def collect_done_stems(self) -> set:
+        """Stems already present under the output prefix (for --resume): one
+        listing, then in-memory membership checks (cheap vs per-key head_object)."""
+        s3cfg = self.cfg.s3
+        done: set = set()
+        async with self._client() as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(Bucket=s3cfg.output_bucket,
+                                                  Prefix=s3cfg.output_prefix):
+                for obj in page.get("Contents", []):
+                    k = obj["Key"]
+                    if not k.lower().endswith(".jpg"):
+                        continue
+                    stem = k.rsplit("/", 1)[-1][:-4]        # basename, drop .jpg
+                    if stem.endswith(("-A", "-B")):
+                        stem = stem[:-2]
+                    done.add(stem)
+        return done
+
     async def _download_worker(self, in_q: asyncio.Queue, out_q: asyncio.Queue,
                                s3) -> None:
         s3cfg = self.cfg.s3

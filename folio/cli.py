@@ -60,7 +60,8 @@ def main(argv=None) -> int:
             stats, mode = P.run_s3(args.input, args.out, device=args.device,
                                    legacy=args.legacy_weights, prepass=not args.no_prepass,
                                    orient_weights=args.orient_weights, region=args.region,
-                                   limit=args.limit, shard=_parse_shard(args.shard))
+                                   limit=args.limit, shard=_parse_shard(args.shard),
+                                   resume=args.resume)
         except Exception as e:  # boto/credentials/region issues
             print(f"S3 run failed: {type(e).__name__}: {e}", file=sys.stderr)
             print("  check AWS credentials (env / ~/.aws), bucket names, and region.", file=sys.stderr)

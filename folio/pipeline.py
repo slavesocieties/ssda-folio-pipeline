@@ -197,19 +197,21 @@ class FolioPipeline:
 
     # -------------------------------------------------------------- async run
     async def run_s3(self, limit: Optional[int] = None,
-                     shard: Optional[tuple] = None) -> dict:
+                     shard: Optional[tuple] = None, resume: bool = False) -> dict:
         """Stream the input bucket through the pipeline, writing crops + sidecars
         back to S3. Returns aggregate counters. ``limit`` caps how many source
         images are processed (safe dry run). ``shard=(i, n)`` processes only the
         keys assigned to worker ``i`` of ``n`` (stable hash partition) so N
-        EC2 / AWS Batch workers can split one corpus with no coordination."""
+        EC2 / AWS Batch workers can split one corpus with no coordination.
+        ``resume`` skips inputs whose output already exists (spot-safe reruns)."""
         import zlib
         from .io.s3_async import S3Streamer
         self._ensure_models()
         streamer = S3Streamer(self.cfg)
         sem = asyncio.Semaphore(self.cfg.s3.upload_concurrency)
-        stats = {"processed": 0, "folios": 0, "review": 0, "errors": 0}
+        stats = {"processed": 0, "folios": 0, "review": 0, "errors": 0, "skipped": 0}
         shard_i, shard_n = (shard or (0, 1))
+        done = await streamer.collect_done_stems() if resume else set()
 
         def _mine(key: str) -> bool:
             return shard_n <= 1 or (zlib.crc32(key.encode()) % shard_n) == shard_i
@@ -235,6 +237,9 @@ class FolioPipeline:
         submitted = 0
         async for item in streamer.stream_images():
             if not _mine(item.key):          # not this shard's key -> skip
+                continue
+            if done and _stem(item.key) in done:   # already processed (resume)
+                stats["skipped"] += 1
                 continue
             tasks.append(asyncio.create_task(handle(item)))
             submitted += 1

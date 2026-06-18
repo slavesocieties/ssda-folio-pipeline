@@ -276,9 +276,11 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
 
 
 def run_s3(input_uri, out_uri, *, device=None, legacy=None, prepass=True,
-           orient_weights=None, region=None, limit=None, shard=None) -> Tuple[dict, str]:
+           orient_weights=None, region=None, limit=None, shard=None,
+           resume=False) -> Tuple[dict, str]:
     """Stream-process an S3 prefix back to S3. Returns ``(stats, mode)``.
-    ``shard=(i, n)`` processes only worker i-of-n's keys (for EC2/Batch fan-out)."""
+    ``shard=(i, n)`` processes only worker i-of-n's keys (for EC2/Batch fan-out);
+    ``resume`` skips inputs whose output already exists."""
     cfg = make_config(device=device, orient_weights=orient_weights)
     cfg.s3.input_bucket, cfg.s3.input_prefix = parse_s3(input_uri)
     cfg.s3.output_bucket, out_prefix = parse_s3(out_uri)
@@ -287,5 +289,5 @@ def run_s3(input_uri, out_uri, *, device=None, legacy=None, prepass=True,
         cfg.s3.region = region
     legacy = find_legacy_weights(legacy, None)
     pipe, mode = build_pipeline(cfg, legacy, prepass=prepass)
-    stats = asyncio.run(pipe.run_s3(limit=limit, shard=shard))
+    stats = asyncio.run(pipe.run_s3(limit=limit, shard=shard, resume=resume))
     return stats, mode

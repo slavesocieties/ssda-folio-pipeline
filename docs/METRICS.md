@@ -29,7 +29,7 @@ to exercise the landscape pre-pass). On 200 images:
 | Metric | Result |
 |---|---|
 | Folio count | **100%** |
-| Two-folio split (==2 folios) | **90%** |
+| Two-folio split (==2 folios) | **100%** |
 | Orientation upright (overall) | **98.8%** |
 | — upright input (stay upright) | 100% |
 | — upside-down input (flip 180) | 97.5% |

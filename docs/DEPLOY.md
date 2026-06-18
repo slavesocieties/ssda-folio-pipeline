@@ -50,6 +50,9 @@ them from S3 on boot to the paths in `folio/config.py` (auto-discovered from
 
 ## Idempotency / resume
 The run is shard-stable, so a failed/spot-killed worker can just be relaunched
-with the same `--shard i/N`. To skip already-written outputs on a rerun, point a
-local run at the output with `--resume`, or add an existence check before upload
-(the output key is deterministic: `<prefix><stem>[-A|-B].jpg`).
+with the same `--shard i/N`. Add `--resume` to skip inputs whose output already
+exists (one listing of the output prefix, then in-memory checks) — so a restart
+only does the remaining work:
+```bash
+folio s3://ssda-raw/v/ --out s3://ssda-folios/f/ --shard 3/8 --resume --region us-east-1
+```
