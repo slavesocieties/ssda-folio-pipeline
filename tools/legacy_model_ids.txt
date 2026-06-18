@@ -1,0 +1,6 @@
+# Legacy baseline models (SSDA Drive). Download into one folder, pass as --legacy-weights.
+folio_count_classifier.pth   1-6O1MT3PRnU09Yt0AVYOLIjjdBcRaaf7
+upside_down.pth              1byi2nVelCJrL061PstIGPs5UUwV_chdn
+folio_upside_down.pth        1TClJPze-dNtGfqFzB0sufb06KfTSH8TX
+unet_folio_split.pth         1vGeDf9G77mHDh0qeY1s1eco4IbMk0ZKp
+# (unet_text_segmentation, *_siamese_model = not needed for split/orient/crop)

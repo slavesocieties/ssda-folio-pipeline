@@ -1,0 +1,6 @@
+# Normalize line endings; keep shell scripts LF
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pt binary
+*.pth binary

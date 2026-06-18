@@ -1,0 +1,234 @@
+"""Orchestrator: ties Stages 1-7 into one per-image flow, and provides the
+async streaming runner that drives it over an entire S3 bucket.
+
+The per-image logic (`process_image`) is deliberately model-light at the type
+level: it depends on small interfaces (detect/segment/predict) so it can be
+unit-tested with stubs and so backends are swappable.
+"""
+from __future__ import annotations
+
+import asyncio
+from typing import List, Optional
+import numpy as np
+
+from .config import PipelineConfig
+from .schemas import ImageResult, FolioResult, PageBox, PageCount
+from .stages import spine, geometry, orient
+
+
+class FolioPipeline:
+    def __init__(self, cfg: PipelineConfig, segmenter=None, counter=None,
+                 orienter=None, dewarper=None, coarse_orienter=None):
+        self.cfg = cfg
+        # injected so tests can pass stubs; built lazily for production runs
+        self.segmenter = segmenter
+        self.counter = counter
+        self.orienter = orienter
+        self.dewarper = dewarper
+        # optional 4-way head run on the WHOLE image to upright sideways
+        # (landscape) scans BEFORE count/segment, so the segmenter never sees a
+        # rotated page. Must be a true 4-way classifier (not the legacy
+        # aspect-ratio orient adapter, which flags any wide image as sideways).
+        self.coarse_orienter = coarse_orienter
+
+    # ------------------------------------------------------------------ build
+    def _ensure_models(self):
+        from .models.segmentation import PageSegmenter
+        from .models.classifiers import FolioCountClassifier, OrientationClassifier
+        if self.segmenter is None:
+            self.segmenter = PageSegmenter(self.cfg.model)
+        if self.counter is None:
+            self.counter = FolioCountClassifier(self.cfg.model)
+        if self.orienter is None:
+            self.orienter = OrientationClassifier(self.cfg.model)
+
+    # ---------------------------------------------------------------- per img
+    def process_image(self, key: str, image: np.ndarray) -> ImageResult:
+        res = ImageResult(source_key=key, version=self.cfg.version)
+        if image is None or image.size == 0:
+            res.error = "decode_failed"
+            return res
+        try:
+            # Stage 0b: coarse orientation pre-pass. Only acts on sideways
+            # (landscape, k in {1,3}) scans, which the upright-trained segmenter
+            # cannot handle; 0/180 are left to the per-folio orientation stage.
+            if self.coarse_orienter is not None:
+                cp = np.asarray(self.coarse_orienter.predict_probs(image)).ravel()
+                ck = int(np.argmax(cp))
+                if ck in (1, 3) and float(cp[ck]) >= 0.5:
+                    image = np.ascontiguousarray(np.rot90(image, k=(-ck) % 4))
+                    res.pre_rotation_k = (-ck) % 4
+
+            # Stage 1: count + layout
+            count, cconf = self.counter.predict(image)
+            res.page_count, res.count_conf = count, cconf
+            if count == PageCount.REJECT:
+                res.error = "rejected_non_page"
+                return res
+
+            # Stage 3: detect + segment pages
+            boxes = self.segmenter.detect(image, max_pages=2 if count == PageCount.TWO else 1)
+            if not boxes:
+                res.error = "no_page_detected"
+                return res
+            masks = self.segmenter.segment(image, boxes)
+
+            # Stage 2 global skew estimate (from union mask) -> recorded only;
+            # fine skew is applied per-folio in Stage 5 for accuracy.
+            union = np.zeros(image.shape[:2], np.uint8)
+            for m in masks:
+                union |= m
+
+            # Stage 4: gutter split for two-folio spreads
+            page_specs = []
+            if count == PageCount.TWO and len(boxes) == 2:
+                seam = spine.detect_gutter(
+                    image, boxes[0].as_tuple(), boxes[1].as_tuple(), mask=union,
+                    band_margin_frac=self.cfg.geom.gutter_band_margin_frac,
+                    seam_smoothness=self.cfg.geom.seam_smoothness,
+                    energy_weights=self.cfg.geom.energy_weights,
+                )
+                res.gutter_seam = seam.tolist()
+                # restrict each page's mask to its side of the seam
+                xs = np.arange(image.shape[1])[None, :]
+                left_sel = xs <= seam[:, None]
+                page_specs = [
+                    ("A", masks[0] * left_sel.astype(np.uint8)),
+                    ("B", masks[1] * (~left_sel).astype(np.uint8)),
+                ]
+            else:
+                page_specs = [("", masks[0])]
+
+            # Stages 3b/5/6/7 per page
+            for label, mask in page_specs:
+                folio = self._finish_page(image, mask, label)
+                if folio is not None:
+                    res.folios.append(folio)
+
+            if not res.folios:
+                res.error = "no_valid_folio"
+            return res
+        except Exception as e:  # robustness: one bad image never kills the run
+            res.error = f"exception:{type(e).__name__}:{e}"
+            return res
+
+    def _finish_page(self, image: np.ndarray, mask: np.ndarray,
+                     label: str) -> Optional[FolioResult]:
+        g = self.cfg.geom
+        q = self.cfg.quality
+        # oriented crop quad (Stage 3 boundary math) + single warp
+        quad = geometry.oriented_page_quad(mask, margin_frac=g.crop_margin_frac)
+        crop_H, cw, ch = geometry.crop_homography(quad)
+        # provisional upright crop to feed the orientation classifier
+        provisional = geometry.compose_and_warp(image, crop_H, cw, ch)
+
+        # Stage 5a: 4-way
+        probs = self.orienter.predict_probs(provisional)
+        import cv2
+        gray = cv2.cvtColor(provisional, cv2.COLOR_BGR2GRAY)
+        k, oconf = orient.resolve_quarter_turn(probs, gray)
+        # Stage 5b: fine skew on the (mentally) rotated page
+        rotated_gray = np.rot90(gray, k=(-k) % 4)
+        skew = orient.estimate_skew(rotated_gray, max_deg=g.skew_max_deg,
+                                    step=g.skew_step_deg)
+
+        # final single warp: crop -> quarter turn -> skew, at full res
+        final = geometry.compose_and_warp(image, crop_H, cw, ch,
+                                          quarter_k=(-k) % 4, skew_deg=skew)
+
+        folio = FolioResult(label=label, crop=final,
+                            rotation_deg=(90.0 * ((-k) % 4) + skew),
+                            orientation_conf=oconf)
+        # Stage 6: optional dewarp gate
+        if self.cfg.enable_dewarp and self.dewarper is not None:
+            curv = _boundary_curvature(mask)
+            if curv > g.dewarp_curvature_thresh:
+                folio.crop = self.dewarper.unwarp(folio.crop)
+
+        # quality gates (Stage 7)
+        h, w = final.shape[:2]
+        area_frac = float(mask.sum()) / float(image.shape[0] * image.shape[1])
+        folio.mask_area_frac = area_frac
+        reasons = []
+        # near-blank pages carry too little text for the 4-way head to be
+        # trusted (it can be confidently 180-wrong) -> route to human review.
+        text_frac = float(orient._text_ink(rotated_gray).mean()) / 255.0
+        folio.text_frac = text_frac
+        if text_frac < q.min_text_frac_for_orient:
+            reasons.append("low_text_for_orientation")
+        if oconf < q.min_orientation_conf:
+            reasons.append("low_orientation_conf")
+        if area_frac < q.min_page_area_frac:
+            reasons.append("page_too_small")
+        aspect = w / float(h)
+        if not (q.portrait_aspect_range[0] <= aspect <= q.portrait_aspect_range[1]):
+            reasons.append("unexpected_aspect")
+        folio.needs_review = len(reasons) > 0
+        folio.review_reasons = reasons
+        return folio
+
+    # -------------------------------------------------------------- async run
+    async def run_s3(self, limit: Optional[int] = None) -> dict:
+        """Stream the input bucket through the pipeline, writing crops + sidecars
+        back to S3. Returns aggregate counters. ``limit`` caps how many source
+        images are processed (safe dry run on a subset of the corpus)."""
+        from .io.s3_async import S3Streamer
+        self._ensure_models()
+        streamer = S3Streamer(self.cfg)
+        sem = asyncio.Semaphore(self.cfg.s3.upload_concurrency)
+        stats = {"processed": 0, "folios": 0, "review": 0, "errors": 0}
+
+        async def handle(item):
+            # GPU work is sync; offload to a thread so the event loop keeps
+            # downloading/uploading concurrently.
+            res = await asyncio.to_thread(self.process_image, item.key, item.image)
+            if res.error:
+                stats["errors"] += 1
+            sidecar = res.sidecar()
+            async with sem:
+                for i, f in enumerate(res.folios):
+                    suffix = f"-{f.label}" if f.label else ""
+                    out_key = f"{_stem(item.key)}{suffix}.jpg"
+                    await streamer.upload(out_key, f.crop, {**sidecar, "folio_index": i},
+                                          review=f.needs_review)
+                    stats["folios"] += 1
+                    stats["review"] += int(f.needs_review)
+            stats["processed"] += 1
+
+        tasks: List[asyncio.Task] = []
+        submitted = 0
+        async for item in streamer.stream_images():
+            tasks.append(asyncio.create_task(handle(item)))
+            submitted += 1
+            if len(tasks) >= self.cfg.model.gpu_batch_size * 4:
+                done = [t for t in tasks if t.done()]
+                for t in done:
+                    await t
+                tasks = [t for t in tasks if not t.done()]
+            if limit is not None and submitted >= limit:
+                break
+        if tasks:
+            await asyncio.gather(*tasks)
+        return stats
+
+
+def _stem(key: str) -> str:
+    base = key.rsplit("/", 1)[-1]
+    return base.rsplit(".", 1)[0]
+
+
+def _boundary_curvature(mask: np.ndarray) -> float:
+    """Rough curvature proxy: deviation of the page's top edge from a straight
+    line, normalised by width. Cheap gate for the (expensive) dewarp model."""
+    import cv2
+    ys = []
+    h, w = mask.shape[:2]
+    for x in range(0, w, max(w // 64, 1)):
+        col = np.where(mask[:, x] > 0)[0]
+        ys.append(col[0] if col.size else np.nan)
+    ys = np.array(ys, dtype=np.float64)
+    ys = ys[~np.isnan(ys)]
+    if ys.size < 4:
+        return 0.0
+    line = np.linspace(ys[0], ys[-1], ys.size)
+    return float(np.max(np.abs(ys - line)) / max(h, 1))

@@ -1,0 +1,6 @@
+# Training the custom heads (GPU box). Installs on top of requirements.txt.
+torch>=2.3
+torchvision>=0.18
+timm>=1.0
+numpy>=1.26
+opencv-python-headless>=4.9

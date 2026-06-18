@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# model weights (download separately; large)
+weights/
+*.pth
+*.pt
+# scratch run outputs
+run_*/
+sample_out/
+eval_out/
+out/
+*.log
+.DS_Store
