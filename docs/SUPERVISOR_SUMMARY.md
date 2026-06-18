@@ -16,33 +16,37 @@ corpus.
 Outputs: `folios/` (the crops), `sidecars/` (per-image JSON provenance),
 `review/` (auto-flagged for a human glance), `manifest.csv`.
 
-## What it does well (measured)
-- **Split:** 7/7 two-folio spreads split correctly; all outputs portrait. Uses a
-  dynamic seam/gutter split, not a fixed midpoint.
-- **Count head:** **100%** on a 126-image held-out test.
-- **Orientation head:** **98.3%** held-out; 4-way (handles the landscape volumes
-  via an orient-before-segment pre-pass), plus an adaptive deskew that matches an
-  exhaustive search exactly and never rails.
-- **Robust:** auto-discovers weights, auto-selects GPU/CPU, falls back to a
-  no-weights classical mode, one bad image never kills a run.
-- **Scales:** ~0.5 s/image; ~18 h for 750k at 6× parallel (no cloud strictly needed).
+## What it does well (end-to-end, measured on labelled data)
+- **Count** (one vs two folios): **100%**.
+- **Two-folio split:** **100%** — dynamic seam/gutter split (not a fixed
+  midpoint); splits even when detection under-segments a spread.
+- **Orientation:** **98.8%** (upright 100%, upside-down 97.5%, landscape 90/270
+  100%). 4-way head + an orient-before-segment pre-pass for the landscape
+  volumes + an adaptive deskew that matches an exhaustive search exactly and
+  never rails.
+- **Robust:** auto-discovers weights, auto-selects GPU/CPU, classical fallback
+  with no weights, one bad image never kills a run.
+- **Scales:** ~0.5 s/image; S3 streaming with `--shard i/N` (EC2/Batch fan-out)
+  and `--resume`; ~half a day for 750k at 8× (CPU-bound — see `DEPLOY.md`).
 
 ## Honest limitations
-- **Sparse/near-blank pages** can be confidently mis-oriented (both our model and
-  the legacy one make the same 180° mistake; no confidence signal catches it).
-  The tool **flags these for review** rather than shipping them silently — but it
-  cannot always *correct* them. The real fix is a small **labelled up/down set**.
+- **Sparse/near-blank pages** are the remaining orientation edge case: a few can
+  still be confidently mis-oriented. The tool **flags low-text pages for review**
+  rather than shipping them silently. A labelled sparse set (we can build it from
+  the transcriptions — see below) would let us measure and fine-tune this away.
 - The `reject` (non-page) class isn't trained — every input yields folio(s).
-- Held-out numbers are from the same volumes as training; the truest signal is the
-  cross-source result on the 25 sample scans (see `METRICS.md`).
+- Numbers above are in-distribution (same volumes as training); a fresh labelled
+  set gives the true cross-volume figure. The harness (`tools/evaluate.py`) is
+  ready to run on it.
 
 ## What I need from you
-1. A **labelled validation set** (a few hundred scans with ground-truth count +
-   orientation, ideally spanning the `landscape_volumes` and some sparse pages) so
-   we can (a) report real corpus accuracy and (b) supervised-fine-tune away the
-   sparse-page orientation errors and re-tune the review threshold.
-2. The **run target** decision: laptop multi-day vs. a cloud GPU burst (the
-   benchmark says the laptop is viable).
+1. A **labelled validation set** for a true cross-volume number — and the
+   **sparse subset** specifically. `tools/find_sparse_folios.py` already turns the
+   automated transcriptions into a sparse-image list (verified on the real
+   transcription format); point it at the `json/` folder, or send the JSONs and
+   I'll generate the list to pull from S3.
+2. The **run target** is EC2 — the S3 + `--shard` + `--resume` path is ready
+   (`DEPLOY.md`).
 
 See `README_TOOL.md` (usage), `METRICS.md` (numbers + how to reproduce),
 `ARCHITECTURE.md` (design).
