@@ -66,3 +66,31 @@ def test_two_folio_split_off_center():
     sc = res.sidecar()
     assert sc["page_count"] == "two_folios"
     assert sc["gutter_seam_summary"]["mean_x"] < 280
+
+
+class _OneBoxSegmenter:
+    """Detects the whole spread as ONE box (the under-segmentation case);
+    segment() masks whatever boxes it is handed."""
+    def detect(self, image, max_pages=2):
+        h, w = image.shape[:2]
+        return [PageBox(8, 8, w - 8, h - 8, 0.97)]
+    def segment(self, image, boxes):
+        h, w = image.shape[:2]
+        out = []
+        for b in boxes:
+            m = np.zeros((h, w), np.uint8)
+            m[b.y1:b.y2, b.x1:b.x2] = 1
+            out.append(m)
+        return out
+
+
+def test_two_folio_split_when_detection_finds_one_box():
+    """count==two but only one box detected -> still split into two folios."""
+    img, gx = _two_folio_image(gutter_x=230)
+    cfg = PipelineConfig()
+    pipe = FolioPipeline(cfg, segmenter=_OneBoxSegmenter(),
+                         counter=StubCounter(), orienter=StubOrienter())
+    res = pipe.process_image("vol/spread.jpg", img)
+    assert res.error is None, res.error
+    assert len(res.folios) == 2
+    assert {f.label for f in res.folios} == {"A", "B"}
