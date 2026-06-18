@@ -1,10 +1,25 @@
 # Folio Pipeline
 
 Production system that turns raw archival book/document photographs into
-**perfectly cropped, upright, portrait single pages** — at cloud scale.
+**cropped, upright, portrait single pages** — one image in, the corrected
+folio(s) out — locally or at cloud scale.
 
 Replaces the legacy U-Net + `W//2` pipeline. Full design rationale and the
-math for every stage live in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+math for every stage live in **[ARCHITECTURE.md](ARCHITECTURE.md)**; the
+end-user tool guide is **[README_TOOL.md](README_TOOL.md)**.
+
+## Quick start
+
+```bash
+pip install -e . --no-deps            # installs the `folio` + `folio-gui` commands
+folio page.jpg                        # one image  -> ./folio_out/folios/
+folio /scans --out /out --jobs 6      # a folder, 6 parallel workers
+folio-gui                             # drag-and-drop desktop app
+```
+
+Weights are auto-discovered; device auto-selects CUDA then CPU; with no weights
+it falls back to a dependency-free classical mode so it always produces output.
+See **[README_TOOL.md](README_TOOL.md)** for the full tool/GUI/S3 guide.
 
 ## What it fixes (vs. the legacy scripts)
 
@@ -59,12 +74,14 @@ python -m folio.cli local sample_images/DSC_0013.JPG --outdir ./out
 ## Test
 
 ```bash
-pytest -q          # 12 tests; the spine + geometry math runs CPU-only
+pytest -q          # 31 tests; all CPU-only, no GPU/weights needed
 ```
 
-The tests include synthetic **off-center** and **curved** gutters to prove the
-seam detector beats the legacy midpoint split, and an end-to-end wiring test
-with stub models (no GPU required).
+The tests cover the spine math (synthetic **off-center** and **curved** gutters),
+geometry/orientation conventions, the adaptive-threshold deskew (recovers known
+tilt, no railing on bordered pages), the landscape orientation **pre-pass**, the
+low-text **review gate**, the S3-URI / weight-discovery helpers, and an
+end-to-end wiring test with stub models (no GPU required).
 
 ## Scale-out
 
