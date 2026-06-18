@@ -112,6 +112,25 @@ class FolioPipeline:
             res.error = f"exception:{type(e).__name__}:{e}"
             return res
 
+    def _orientation_view(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Full-height view of the folio's horizontal slice, for the 4-way head.
+
+        The head was trained on FULL single-folio scans (page + scan border), so
+        the tight oriented crop — which strips that context — flips its 0-vs-180
+        decision (verified: head is 0.99-correct on the full image, wrong on the
+        tight crop). For a single folio this returns ~the whole image; for a
+        two-folio side it returns that side's full-height slice. Preserves image
+        up/down, so the chosen quarter-turn still applies to the oriented crop."""
+        h, w = image.shape[:2]
+        cols = np.where(mask.any(axis=0))[0]
+        if cols.size == 0:
+            return image
+        x0, x1 = int(cols.min()), int(cols.max())
+        # wide margin so a single folio gets ~the whole scan (page + border),
+        # which is the framing the head was trained on
+        pad = int(0.5 * (x1 - x0))
+        return image[:, max(0, x0 - pad):min(w, x1 + pad)]
+
     def _finish_page(self, image: np.ndarray, mask: np.ndarray,
                      label: str) -> Optional[FolioResult]:
         g = self.cfg.geom
@@ -119,12 +138,16 @@ class FolioPipeline:
         # oriented crop quad (Stage 3 boundary math) + single warp
         quad = geometry.oriented_page_quad(mask, margin_frac=g.crop_margin_frac)
         crop_H, cw, ch = geometry.crop_homography(quad)
-        # provisional upright crop to feed the orientation classifier
+        # provisional upright crop (used for the final geometry + skew)
         provisional = geometry.compose_and_warp(image, crop_H, cw, ch)
-
-        # Stage 5a: 4-way
-        probs = self.orienter.predict_probs(provisional)
         import cv2
+
+        # Stage 5a: 4-way. Decide orientation on a GENEROUS page view, not the
+        # tight oriented crop: the tight crop loses the page-context cues the head
+        # was trained on and can flip its 0-vs-180 call (verified). Both views
+        # preserve image up/down, so the chosen quarter-turn applies to either.
+        orient_view = self._orientation_view(image, mask)
+        probs = self.orienter.predict_probs(orient_view)
         gray = cv2.cvtColor(provisional, cv2.COLOR_BGR2GRAY)
         k, oconf = orient.resolve_quarter_turn(probs, gray)
         # Stage 5b: fine skew on the (mentally) rotated page
