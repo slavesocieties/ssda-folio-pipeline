@@ -51,6 +51,30 @@ def test_list_images(tmp_path):
     assert P.list_images(single) == [single]
 
 
+def test_parse_shard():
+    from folio.cli import _parse_shard
+    assert _parse_shard(None) is None
+    assert _parse_shard("0/8") == (0, 8)
+    assert _parse_shard("7/8") == (7, 8)
+    import pytest as _pt
+    with _pt.raises(SystemExit):
+        _parse_shard("8/8")          # i must be < N
+
+
+def test_shard_partition_is_complete_and_disjoint():
+    """Every key lands in exactly one shard across N workers (the run_s3 rule)."""
+    import zlib
+    keys = [f"vol/{i}-{j}.jpg" for i in range(300) for j in range(3)]
+    N = 6
+    seen = {}
+    for shard in range(N):
+        for k in keys:
+            if (zlib.crc32(k.encode()) % N) == shard:
+                seen[k] = seen.get(k, 0) + 1
+    assert len(seen) == len(keys)            # complete coverage
+    assert set(seen.values()) == {1}         # disjoint (each key once)
+
+
 def test_build_pipeline_classical_fallback():
     """No legacy weights -> classical pipeline, no torch required."""
     cfg = P.make_config(device="cpu")

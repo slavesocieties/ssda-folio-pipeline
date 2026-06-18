@@ -32,8 +32,20 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--resume", action="store_true", help="skip images already processed in --out")
     ap.add_argument("--limit", type=int, default=None, help="process at most N images (safe dry run)")
     ap.add_argument("--region", default=None, help="AWS region for S3 mode")
+    ap.add_argument("--shard", default=None, metavar="i/N",
+                    help="S3 only: process worker i of N (e.g. 0/8) for EC2/Batch fan-out")
     ap.add_argument("--quiet", action="store_true", help="only print the final summary")
     return ap
+
+
+def _parse_shard(s):
+    if not s:
+        return None
+    i, n = s.split("/")
+    i, n = int(i), int(n)
+    if not (0 <= i < n):
+        raise SystemExit(f"--shard out of range: {s} (need 0 <= i < N)")
+    return (i, n)
 
 
 def main(argv=None) -> int:
@@ -48,7 +60,7 @@ def main(argv=None) -> int:
             stats, mode = P.run_s3(args.input, args.out, device=args.device,
                                    legacy=args.legacy_weights, prepass=not args.no_prepass,
                                    orient_weights=args.orient_weights, region=args.region,
-                                   limit=args.limit)
+                                   limit=args.limit, shard=_parse_shard(args.shard))
         except Exception as e:  # boto/credentials/region issues
             print(f"S3 run failed: {type(e).__name__}: {e}", file=sys.stderr)
             print("  check AWS credentials (env / ~/.aws), bucket names, and region.", file=sys.stderr)
