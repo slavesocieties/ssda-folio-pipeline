@@ -72,10 +72,13 @@ class FolioPipeline:
                 res.error = "no_page_detected"
                 return res
             # count says two folios but detection under-segmented to one box:
-            # trust the (reliable) count head and halve that box so the gutter
-            # split below still runs (the seam search refines the true spine).
+            # halve the FULL FRAME (not the under-covering detected box, which can
+            # clip a page's outer edge) so segment()'s page mask — which reaches
+            # further than the box — is captured on both sides; the seam search
+            # then refines the true spine.
             if count == PageCount.TWO and len(boxes) == 1:
-                boxes = _halve_box(boxes[0])
+                h, w = image.shape[:2]
+                boxes = _halve_box(PageBox(0, 0, w, h, boxes[0].score))
             masks = self.segmenter.segment(image, boxes)
 
             # Stage 2 global skew estimate (from union mask) -> recorded only;
