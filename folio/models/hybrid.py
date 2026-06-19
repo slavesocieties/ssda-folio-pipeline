@@ -54,17 +54,29 @@ class UNetFolioSegmenter:
 
     def segment(self, image: np.ndarray, boxes: List[PageBox]) -> List[np.ndarray]:
         mask = self._mask(image)
+        h, w = mask.shape
+        # Restrict the page mask to each box's horizontal TERRITORY (bounded by
+        # the midpoints between adjacent box centres), full height — NOT the tight
+        # detection box. A box that under-covers the page (e.g. foreground detection
+        # stopping short of a faint outer edge) would otherwise clip real text; the
+        # territory keeps the full page mask, and the downstream seam split refines
+        # the inner (gutter) edge.
+        centres = sorted((int((b.x1 + b.x2) // 2), i) for i, b in enumerate(boxes))
+        terr = {}
+        for rank, (c, i) in enumerate(centres):
+            lo = 0 if rank == 0 else (centres[rank - 1][0] + c) // 2
+            hi = w if rank == len(centres) - 1 else (c + centres[rank + 1][0]) // 2
+            terr[i] = (lo, hi)
         out = []
-        for b in boxes:
-            x1, y1, x2, y2 = b.as_tuple()
-            sub = np.zeros(image.shape[:2], np.uint8)
-            sub[y1:y2, x1:x2] = mask[y1:y2, x1:x2]
-            frac = sub.sum() / float(max((x2 - x1) * (y2 - y1), 1))
+        for i, b in enumerate(boxes):
+            lo, hi = terr[i]
+            sub = np.zeros((h, w), np.uint8)
+            sub[:, lo:hi] = mask[:, lo:hi]
+            frac = sub.sum() / float(max((hi - lo) * h, 1))
             if frac < self._min_mask_frac and self._sam is not None:
                 # U-Net unsure on this page -> escalate to SAM 2.1
                 try:
-                    sm = self._sam.segment(image, [b])[0]
-                    sub = sm
+                    sub = self._sam.segment(image, [b])[0]
                 except Exception:
                     pass
             out.append(sub)
