@@ -7,7 +7,7 @@ lazily; ``geometric_priors`` is pure NumPy and unit-testable on its own.
 """
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import Tuple
 import cv2
 import numpy as np
 

@@ -8,9 +8,10 @@ Writes crops/ + montage_crops.jpg + report.json. With --orient neural it loads
 cfg.model.orientation_weights (weights/orientation4_convnextv2.pt by default).
 """
 from __future__ import annotations
-import argparse, json
+import argparse
+import json
 from pathlib import Path
-import cv2, numpy as np
+import cv2
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

@@ -276,7 +276,6 @@ def _stem(key: str) -> str:
 def _boundary_curvature(mask: np.ndarray) -> float:
     """Rough curvature proxy: deviation of the page's top edge from a straight
     line, normalised by width. Cheap gate for the (expensive) dewarp model."""
-    import cv2
     ys = []
     h, w = mask.shape[:2]
     for x in range(0, w, max(w // 64, 1)):

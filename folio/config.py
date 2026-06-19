@@ -6,7 +6,7 @@ single YAML/env source. Defaults are production-sane.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Tuple
+from typing import Tuple
 import os
 
 
@@ -67,7 +67,7 @@ class QualityConfig:
     min_count_conf: float = 0.80
     min_orientation_conf: float = 0.70
     min_page_area_frac: float = 0.10        # crop must cover >=10% of source
-    portrait_aspect_range: Tuple[float, float] = (0.5, 0.95)  # h>w expected
+    portrait_aspect_range: Tuple[float, float] = (0.4, 0.95)  # h>w expected
     # below this fraction of text-ink pixels the 4-way orientation head is
     # unreliable (sparse/near-blank pages, where it can be confidently 180-wrong)
     # -> flag for review instead of trusting it. Calibrated on the sample set to

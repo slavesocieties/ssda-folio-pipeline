@@ -9,7 +9,7 @@ Pure NumPy + OpenCV; no GPU, no learned weights required. Fully unit-testable.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 import cv2
 import numpy as np
 

@@ -27,7 +27,6 @@ from folio.config import PipelineConfig
 from folio.pipeline import FolioPipeline
 from folio.models.classical import (ClassicalSegmenter, ClassicalCounter,
                                      ClassicalOrienter)
-from folio.stages import spine
 
 
 def draw_overlay(image, boxes, seam):

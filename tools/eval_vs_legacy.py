@@ -17,7 +17,9 @@ Usage:
 """
 from __future__ import annotations
 
-import argparse, csv, json, math
+import argparse
+import csv
+import json
 from pathlib import Path
 import numpy as np
 import cv2

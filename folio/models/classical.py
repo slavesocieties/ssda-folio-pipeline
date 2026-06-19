@@ -14,7 +14,6 @@ import numpy as np
 
 from ..schemas import PageBox, PageCount
 from ..stages import foreground
-from ..stages.orient import text_line_score
 
 
 class ClassicalSegmenter:

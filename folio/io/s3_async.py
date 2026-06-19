@@ -12,10 +12,9 @@ downloaders block, and memory stays flat regardless of dataset size.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 from dataclasses import dataclass
-from typing import AsyncIterator, List, Optional, Tuple
+from typing import AsyncIterator, List, Optional
 
 import numpy as np
 
@@ -122,7 +121,7 @@ class S3Streamer:
                 img = decode_image(data)
                 if img is not None:
                     await out_q.put(DecodedItem(key, img))
-            except Exception as e:  # never let one bad object kill the run
+            except Exception:  # never let one bad object kill the run
                 await out_q.put(DecodedItem(key, None))  # mark error downstream
             finally:
                 in_q.task_done()

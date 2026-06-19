@@ -14,7 +14,7 @@ weights_dir:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 import numpy as np
 import cv2
 

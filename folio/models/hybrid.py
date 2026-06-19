@@ -20,7 +20,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple
 import numpy as np
-import cv2
 
 from ..schemas import PageBox, PageCount
 from ..stages import foreground

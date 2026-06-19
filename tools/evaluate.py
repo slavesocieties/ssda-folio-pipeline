@@ -39,7 +39,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from folio import process as P
-from folio.schemas import PageCount
 
 
 def _applied_quarters(res, folio) -> int:
@@ -156,7 +155,7 @@ def main():
           f"2->1 {cm_count[('two_folios','one_folio')]}, 2->2 {cm_count[('two_folios','two_folios')]}")
     print(f"two-folio split (==2): {pct(split_ok, split_tot)}")
     print(f"orientation upright  : {pct(ori_ok, ori_tot)}")
-    print(f"  by input orientation:")
+    print("  by input orientation:")
     print(f"    upright input  (0,   should stay) : {pct(*by_in[0])}   review {pct(rev_by_in[0], by_in[0][1])}")
     print(f"    upside-down    (180, should flip) : {pct(*by_in[2])}   review {pct(rev_by_in[2], by_in[2][1])}")
     print(f"    landscape      (90/270, pre-pass) : {pct(*by_in['land'])}   review {pct(rev_by_in['land'], by_in['land'][1])}")

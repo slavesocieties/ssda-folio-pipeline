@@ -7,7 +7,7 @@ single warpPerspective (one resample => minimal interpolation loss).
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 import cv2
 import numpy as np
 
