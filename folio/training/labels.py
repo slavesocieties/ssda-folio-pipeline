@@ -14,6 +14,7 @@ import numpy as np
 
 ORIENTATION_DEGREES = [0, 90, 180, 270]   # index == label k
 COUNT_CLASSES = ["one_folio", "two_folios", "reject"]
+BLANK_CLASSES = ["content", "blank"]      # index 1 == blank/non-content page
 
 
 def apply_orientation(image: np.ndarray, k: int) -> np.ndarray:

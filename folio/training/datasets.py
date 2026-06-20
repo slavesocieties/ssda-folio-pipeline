@@ -105,3 +105,34 @@ class FolioCountDataset(Dataset):
             img = _photometric(img, self.rng)
         aux = torch.tensor([ar, valley], dtype=torch.float32)
         return _to_tensor(img, self.size), aux, label
+
+
+class BlankDataset(Dataset):
+    """content vs blank, from class subfolders content/ blank/. Photometric-only
+    jitter (orientation/geometry are irrelevant to 'has readable text?')."""
+    def __init__(self, root: str, size: int = 384, train: bool = True, seed: int = 0):
+        from .labels import BLANK_CLASSES
+        self.size = size
+        self.train = train
+        self.rng = np.random.default_rng(seed)
+        self.items: List[Tuple[str, int]] = []
+        for ci, cls in enumerate(BLANK_CLASSES):
+            d = Path(root) / cls
+            if d.is_dir():
+                for p in d.rglob("*"):
+                    if p.suffix.lower() in _EXT:
+                        self.items.append((str(p), ci))
+        if not self.items:
+            raise FileNotFoundError(f"no content/ or blank/ folders under {root}")
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i: int):
+        path, label = self.items[i]
+        img = cv2.imread(path)
+        if img is None:
+            img = np.full((self.size, self.size, 3), 255, np.uint8)
+        if self.train:
+            img = _photometric(img, self.rng)
+        return _to_tensor(img, self.size), label

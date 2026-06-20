@@ -86,3 +86,25 @@ def test_text_dense_page_not_low_text_flagged():
     res = pipe.process_image("dense.jpg", img)
     assert res.folios
     assert "low_text_for_orientation" not in res.folios[0].review_reasons
+
+
+class _BlankStub:
+    def __init__(self, is_blank):
+        self.v = is_blank
+    def predict(self, image):
+        return (self.v, 0.93 if self.v else 0.04)
+
+
+def test_blank_classifier_tags_folio_and_sidecar():
+    pipe = _pipe()
+    pipe.blank_classifier = _BlankStub(True)
+    res = pipe.process_image("blank.jpg", _page())
+    assert res.folios
+    f = res.folios[0]
+    assert f.is_blank is True and f.blank_conf == 0.93
+    assert res.sidecar()["folios"][0]["is_blank"] is True
+
+
+def test_no_blank_classifier_defaults_false():
+    res = _pipe().process_image("x.jpg", _page())   # no blank_classifier attached
+    assert res.folios and res.folios[0].is_blank is False

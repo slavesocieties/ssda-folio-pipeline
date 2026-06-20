@@ -145,6 +145,8 @@ def main():
             "folios": [{"label": f.label,
                         "rotation_deg": round(f.rotation_deg, 2),
                         "orient_conf": round(f.orientation_conf, 3),
+                        "is_blank": f.is_blank,
+                        "blank_conf": round(f.blank_conf, 3),
                         "review": f.needs_review,
                         "reasons": f.review_reasons,
                         "out_w": f.crop.shape[1], "out_h": f.crop.shape[0]}

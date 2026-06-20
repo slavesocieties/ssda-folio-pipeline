@@ -87,6 +87,30 @@ class OrientationClassifier:
         return probs
 
 
+class BlankClassifier:
+    """content vs blank/non-content. predict(image) -> (is_blank, confidence)."""
+
+    def __init__(self, cfg: ModelConfig):
+        self.cfg = cfg
+        self._model = None
+
+    def _load(self):
+        if self._model is not None:
+            return
+        import torch
+        self._torch = torch
+        self._model = torch.jit.load(self.cfg.blank_weights,
+                                     map_location=cfg_device(self.cfg)).eval()
+
+    def predict(self, image: np.ndarray) -> Tuple[bool, float]:
+        self._load()
+        torch = self._torch
+        t = _preprocess(image, self.cfg.classifier_size)
+        with torch.inference_mode():
+            probs = torch.softmax(self._model(t.to(cfg_device(self.cfg))), dim=1)[0].float().cpu().numpy()
+        return bool(probs[1] >= 0.5), float(probs[1])     # index 1 == blank
+
+
 def cfg_device(cfg: ModelConfig) -> str:
     return cfg.device
 

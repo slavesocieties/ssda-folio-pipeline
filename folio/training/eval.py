@@ -9,13 +9,13 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .datasets import OrientationDataset, FolioCountDataset
-from .labels import ORIENTATION_DEGREES, COUNT_CLASSES
+from .datasets import OrientationDataset, FolioCountDataset, BlankDataset
+from .labels import ORIENTATION_DEGREES, COUNT_CLASSES, BLANK_CLASSES
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", choices=["orientation", "count"], required=True)
+    ap.add_argument("--task", choices=["orientation", "count", "blank"], required=True)
     ap.add_argument("--data", required=False)
     ap.add_argument("--manifest", default=None)
     ap.add_argument("--weights", required=True)
@@ -28,6 +28,9 @@ def main():
     if args.task == "orientation":
         ds = OrientationDataset(args.data, size=args.size, train=False)
         names = [str(d) for d in ORIENTATION_DEGREES]; n = 4
+    elif args.task == "blank":
+        ds = BlankDataset(args.data, size=args.size, train=False)
+        names = BLANK_CLASSES; n = 2
     else:
         ds = FolioCountDataset(root=args.data, manifest=args.manifest,
                                size=args.size, train=False)
@@ -36,10 +39,10 @@ def main():
     cm = np.zeros((n, n), int); correct = tot = 0
     with torch.inference_mode():
         for batch in dl:
-            if args.task == "orientation":
-                x, y = batch; logits = model(x.to(args.device))
-            else:
+            if args.task == "count":
                 x, aux, y = batch; logits = model(x.to(args.device), aux.to(args.device))
+            else:
+                x, y = batch; logits = model(x.to(args.device))
             pred = logits.argmax(1).cpu().numpy()
             for t, p in zip(y.numpy(), pred):
                 cm[t, p] += 1; correct += int(t == p); tot += 1

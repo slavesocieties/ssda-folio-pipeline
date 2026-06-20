@@ -43,9 +43,21 @@ Breakdown of the 791:
 - **Treat these as blank / non-content**, not as an orientation-training target.
   The transcription-length signal already identifies them; downstream transcription
   can skip them.
-- If a **dedicated blank-page classifier** is wanted (to mark non-content pages so
-  Archivault skips them), this set (791 blanks) + the text-bearing pages in
-  `train_data/` would train one cleanly — that's the genuinely useful ML use of
-  this data. Say the word and we can build it.
 - To push orientation on the *minority* of sparse-but-real-text pages would need
   actual orientation **labels** on that specific subset — not the textless bulk.
+
+## Blank/non-content classifier — BUILT
+We used this set as the genuinely-useful ML target: a content-vs-blank classifier
+(`weights/blank_convnextv2.pt`, ConvNeXt-V2; train: `folio.training.train --task
+blank`; inference: `BlankClassifier`). The pipeline now tags every folio
+`is_blank` + `blank_conf` in the sidecar/manifest, so Archivault can skip
+non-content pages.
+
+Results (held-out test + end-to-end):
+- **0 / 33 real content folios** wrongly marked blank — it never drops a real page
+  (high precision; ~95% on the held-out test).
+- **~70%** of real sparse/blank pages correctly marked (the obvious blank ones;
+  textured/decayed/marbled blanks are harder and are the misses).
+- So it's a **conservative, high-precision** signal: trust `is_blank` to skip, and
+  use `blank_conf` if you want a stricter threshold. The low-text review gate
+  remains the backstop for the blanks it misses.

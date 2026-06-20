@@ -18,13 +18,17 @@ from .stages import spine, geometry, orient
 
 class FolioPipeline:
     def __init__(self, cfg: PipelineConfig, segmenter=None, counter=None,
-                 orienter=None, dewarper=None, coarse_orienter=None):
+                 orienter=None, dewarper=None, coarse_orienter=None,
+                 blank_classifier=None):
         self.cfg = cfg
         # injected so tests can pass stubs; built lazily for production runs
         self.segmenter = segmenter
         self.counter = counter
         self.orienter = orienter
         self.dewarper = dewarper
+        # optional content/blank classifier; when set, each folio is tagged
+        # is_blank in the sidecar so Archivault can skip non-content pages.
+        self.blank_classifier = blank_classifier
         # optional 4-way head run on the WHOLE image to upright sideways
         # (landscape) scans BEFORE count/segment, so the segmenter never sees a
         # rotated page. Must be a true 4-way classifier (not the legacy
@@ -170,6 +174,10 @@ class FolioPipeline:
         folio = FolioResult(label=label, crop=final,
                             rotation_deg=(90.0 * ((-k) % 4) + skew),
                             orientation_conf=oconf)
+        # Stage 5c: content vs blank/non-content (so Archivault can skip blanks)
+        if self.blank_classifier is not None:
+            folio.is_blank, folio.blank_conf = self.blank_classifier.predict(final)
+
         # Stage 6: optional dewarp gate
         if self.cfg.enable_dewarp and self.dewarper is not None:
             curv = _boundary_curvature(mask)

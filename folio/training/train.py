@@ -15,8 +15,8 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from .datasets import OrientationDataset, FolioCountDataset
-from .models import OrientationNet, FolioCountNet, export_torchscript
+from .datasets import OrientationDataset, FolioCountDataset, BlankDataset
+from .models import OrientationNet, FolioCountNet, BlankNet, export_torchscript
 
 
 def _split(ds, val_frac, seed):
@@ -32,13 +32,13 @@ def run_epoch(model, loader, task, device, opt=None, scaler=None):
     tot, correct, loss_sum = 0, 0, 0.0
     crit = torch.nn.CrossEntropyLoss()
     for batch in loader:
-        if task == "orientation":
+        if task in ("orientation", "blank"):
             x, y = batch; x, y = x.to(device), y.to(device); aux = None
         else:
             x, aux, y = batch; x, aux, y = x.to(device), aux.to(device), y.to(device)
         with torch.set_grad_enabled(train), torch.autocast(device_type=device.split(":")[0],
                                                            enabled=(device != "cpu")):
-            logits = model(x) if task == "orientation" else model(x, aux)
+            logits = model(x, aux) if task == "count" else model(x)
             loss = crit(logits, y)
         if train:
             opt.zero_grad(set_to_none=True)
@@ -50,7 +50,7 @@ def run_epoch(model, loader, task, device, opt=None, scaler=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", choices=["orientation", "count"], required=True)
+    ap.add_argument("--task", choices=["orientation", "count", "blank"], required=True)
     ap.add_argument("--data", required=False)
     ap.add_argument("--manifest", default=None)
     ap.add_argument("--out", required=True)
@@ -67,6 +67,9 @@ def main():
     if args.task == "orientation":
         full = OrientationDataset(args.data, size=args.size, train=True, seed=args.seed)
         model = OrientationNet(pretrained=True)
+    elif args.task == "blank":
+        full = BlankDataset(args.data, size=args.size, train=True, seed=args.seed)
+        model = BlankNet(pretrained=True)
     else:
         full = FolioCountDataset(root=args.data, manifest=args.manifest,
                                  size=args.size, train=True, seed=args.seed)

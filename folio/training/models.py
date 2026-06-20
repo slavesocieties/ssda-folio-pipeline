@@ -34,6 +34,17 @@ class OrientationNet(nn.Module):
         return self.head(self.backbone(x))
 
 
+class BlankNet(nn.Module):
+    """content vs blank/non-content -> logits[B,2] (matches BlankClassifier)."""
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+        self.backbone, f = _backbone(pretrained)
+        self.head = nn.Linear(f, 2)
+
+    def forward(self, x):
+        return self.head(self.backbone(x))
+
+
 class FolioCountNet(nn.Module):
     def __init__(self, pretrained: bool = True, n_aux: int = 2):
         super().__init__()
@@ -54,7 +65,7 @@ def export_torchscript(model: nn.Module, task: str, size: int, path: str,
     """Trace to TorchScript so it loads via torch.jit.load in the wrappers."""
     model.eval().to(device)
     ex_img = torch.randn(1, 3, size, size, device=device)
-    if task == "orientation":
+    if task in ("orientation", "blank"):
         scripted = torch.jit.trace(model, ex_img)
     else:
         ex_aux = torch.randn(1, 2, device=device)

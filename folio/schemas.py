@@ -44,6 +44,8 @@ class FolioResult:
     orientation_conf: float = 0.0
     mask_area_frac: float = 0.0
     text_frac: float = 0.0           # fraction of text-ink pixels (orient reliability)
+    is_blank: bool = False           # blank/non-content page (skip downstream transcription)
+    blank_conf: float = 0.0
     needs_review: bool = False
     review_reasons: List[str] = field(default_factory=list)
 

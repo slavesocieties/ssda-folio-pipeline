@@ -101,13 +101,22 @@ def build_pipeline(cfg: PipelineConfig, legacy_weights: Optional[str],
             if prepass:
                 pipe.coarse_orienter = head
                 mode += " + landscape pre-pass"
-        return pipe, mode
+        return pipe, _attach_blank(pipe, cfg, mode)
 
     from .models.classical import (ClassicalSegmenter, ClassicalCounter,
                                     ClassicalOrienter)
     pipe = FolioPipeline(cfg, segmenter=ClassicalSegmenter(cfg.model),
                          counter=ClassicalCounter(), orienter=ClassicalOrienter())
-    return pipe, "classical (no legacy weights found)"
+    return pipe, _attach_blank(pipe, cfg, "classical (no legacy weights found)")
+
+
+def _attach_blank(pipe, cfg, mode: str) -> str:
+    """Attach the content/blank classifier if its weight is present."""
+    if Path(cfg.model.blank_weights).exists():
+        from .models.classifiers import BlankClassifier
+        pipe.blank_classifier = BlankClassifier(cfg.model)
+        mode += " + blank-detect"
+    return mode
 
 
 def make_config(device: Optional[str] = None,
@@ -118,13 +127,15 @@ def make_config(device: Optional[str] = None,
         cfg.model.orientation_weights = str(Path(orient_weights))
     else:
         resolve_orient_weight(cfg)
+    if not Path(cfg.model.blank_weights).is_absolute():
+        cfg.model.blank_weights = str(_REPO / cfg.model.blank_weights)
     return cfg
 
 
 # ----------------------------------------------------------------- local results
 MANIFEST_FIELDS = ["source", "folio", "page_count", "count_conf", "pre_rotation_k",
-                   "rotation_deg", "orient_conf", "text_frac", "needs_review",
-                   "review_reasons"]
+                   "rotation_deg", "orient_conf", "text_frac", "is_blank",
+                   "needs_review", "review_reasons"]
 
 
 def _row(source: str, folio: str, res, f) -> dict:
@@ -132,8 +143,8 @@ def _row(source: str, folio: str, res, f) -> dict:
         "source": source, "folio": folio, "page_count": res.page_count.value,
         "count_conf": round(res.count_conf, 3), "pre_rotation_k": res.pre_rotation_k,
         "rotation_deg": round(f.rotation_deg, 2), "orient_conf": round(f.orientation_conf, 3),
-        "text_frac": round(f.text_frac, 4), "needs_review": f.needs_review,
-        "review_reasons": ";".join(f.review_reasons),
+        "text_frac": round(f.text_frac, 4), "is_blank": f.is_blank,
+        "needs_review": f.needs_review, "review_reasons": ";".join(f.review_reasons),
     }
 
 

@@ -57,8 +57,9 @@ review/    copies of crops the tool is unsure about (human QA)
 manifest.csv                   one row per output folio
 ```
 Each row records page count + confidence, any whole-image pre-rotation, the
-applied rotation/skew, orientation confidence, text fraction, and whether it was
-flagged `needs_review` (and why).
+applied rotation/skew, orientation confidence, text fraction, **`is_blank`**
+(content vs blank/non-content page — so Archivault can skip blanks), and whether
+it was flagged `needs_review` (and why).
 
 ## What it does internally (recommended hybrid config)
 1. **Coarse orientation pre-pass** — uprights sideways/landscape scans before

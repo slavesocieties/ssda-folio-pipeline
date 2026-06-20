@@ -40,6 +40,7 @@ class ModelConfig:
     sam_model_cfg: str = "sam2.1_hiera_l.yaml"
     folio_count_weights: str = "weights/folio_count_convnextv2.pt"
     orientation_weights: str = "weights/orientation4_convnextv2.pt"
+    blank_weights: str = "weights/blank_convnextv2.pt"   # content/blank classifier
     dewarp_weights: str = "weights/uvdoc.pt"
     # inference image sizes (geometry is always applied at full res)
     detector_size: int = 1024
@@ -50,7 +51,7 @@ class ModelConfig:
 class GeometryConfig:
     # outward crop margin so frayed edges / marginalia are never clipped,
     # expressed as a fraction of the page diagonal (Stage 3 boundary math).
-    crop_margin_frac: float = 0.015
+    crop_margin_frac: float = 0.045
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much
     seam_smoothness: float = 0.3            # DP diagonal penalty weight
