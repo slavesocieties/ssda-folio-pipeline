@@ -7,23 +7,41 @@ derivatives, (2) make every folio upright, (3) crop to the folio.
 Two ways to use it: a **drag-and-drop desktop app** (`folio-gui`) and a
 **command line** (`folio`) that also does S3 at corpus scale.
 
-## Install
+## Install on a new machine (any lab computer)
+Works on Windows, macOS, Linux. Needs **Python 3.10–3.12**.
 ```bash
-pip install -e . --no-deps     # installs the `folio` and `folio-gui` commands
-pip install -r requirements.txt  # first time only, for the dependencies
-# GPU (recommended): install the CUDA build of torch for your card, e.g. cu128:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+git clone <repo-url> ssda-folio-pipeline
+cd ssda-folio-pipeline
+python -m pip install -r requirements.txt   # dependencies (first time only)
+python -m pip install -e . --no-deps         # the `folio` + `folio-gui` commands
+python tools/setup_weights.py                # fetch the model weights (see below)
 ```
-> Re-running `pip install -r requirements.txt` can replace the CUDA torch with a
+GPU is optional but ~10× faster. For an NVIDIA card install the matching CUDA
+torch, e.g. cu128 for RTX 50-series:
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+```
+> Re-running `pip install -r requirements.txt` can replace a CUDA torch with a
 > CPU build. If `torch.cuda.is_available()` turns False, reinstall from the cu128
-> index above.
+> index above. CPU-only machines work fine (auto-detected), just slower.
 
-## Weights (one-time)
-Download the legacy `.pth` models into one folder (IDs in
-`tools/legacy_model_ids.txt`) and keep the trained heads at
-`weights/orientation4_convnextv2.pt` and `weights/folio_count_convnextv2.pt`.
-Weights are **auto-discovered** from `./legacy_weights`, the repo, the input
-folder, or `$FOLIO_LEGACY_WEIGHTS`.
+**Windows double-click app:** `Folio Processor.bat` in the repo opens the GUI with
+no terminal (uses `py`/`python` on PATH — copy it to the Desktop if you like).
+
+## Weights (one-time) — they are NOT in git
+The weights are too large for git, so a fresh clone has none. `tools/setup_weights.py`
+fetches them: the legacy `.pth` (Google Drive IDs in `tools/legacy_model_ids.txt`)
+→ `../legacy_weights/`, and the three trained heads → `weights/`
+(`orientation4_convnextv2.pt`, `folio_count_convnextv2.pt`, `blank_convnextv2.pt`).
+
+To host the trained heads for the whole lab, attach them to a **GitHub Release**,
+then everyone runs:
+```bash
+FOLIO_WEIGHTS_BASE=https://github.com/<org>/ssda-folio-pipeline/releases/download/v1.0 \
+  python tools/setup_weights.py
+```
+Weights are then **auto-discovered** from `./weights`, `./legacy_weights`, the repo,
+the input folder, or `$FOLIO_LEGACY_WEIGHTS` — no flags needed.
 
 ## Desktop app (recommended for ad-hoc use)
 ```bash
