@@ -157,9 +157,20 @@ class RunStats:
     manifest: List[dict] = field(default_factory=list)
 
 
+def _is_faint(f) -> bool:
+    """A real-content page carrying only light/faint ink (the case that benefits
+    from a contrast-boosted derivative). Excludes pages the blank classifier
+    flagged as blank — enhancing a blank page is pointless."""
+    tf = getattr(f, "text_frac", None)
+    return tf is not None and tf < 0.12 and not getattr(f, "is_blank", False)
+
+
 def write_image_result(out: Path, source_name: str, stem: str, res,
-                       stats: RunStats) -> None:
-    """Persist one ImageResult: sidecar + crops (+ review copies) + manifest rows."""
+                       stats: RunStats, enhance: bool = False) -> None:
+    """Persist one ImageResult: sidecar + crops (+ review copies) + manifest rows.
+
+    ``enhance``: also write a CLAHE contrast-boosted ``*_enhanced.jpg`` for faint
+    pages, so downstream transcription can read light handwriting."""
     (out / "sidecars" / f"{stem}.json").write_text(json.dumps(res.sidecar(), indent=2))
     if res.error and not res.folios:
         stats.errors += 1
@@ -169,6 +180,10 @@ def write_image_result(out: Path, source_name: str, stem: str, res,
         rel = f"{stem}{sfx}.jpg"
         dst = out / "folios" / rel
         cv2.imwrite(str(dst), f.crop)
+        if enhance and _is_faint(f):
+            from .stages import content as _content
+            cv2.imwrite(str(out / "folios" / f"{stem}{sfx}_enhanced.jpg"),
+                        _content.enhance_faint(f.crop))
         if f.needs_review:
             shutil.copyfile(dst, out / "review" / rel)
             stats.review += 1
@@ -226,7 +241,7 @@ def _worker_run(path_str):
 # ------------------------------------------------------------------- orchestration
 def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
               orient_weights=None, jobs=1, resume=False, limit=None,
-              on_start=None, on_item=None) -> Tuple[RunStats, str]:
+              enhance=False, on_start=None, on_item=None) -> Tuple[RunStats, str]:
     """Process a local image or folder. Returns ``(stats, mode)``.
 
     ``jobs>1`` runs a CPU process pool (the work is CPU-bound; the GPU models are
@@ -262,7 +277,7 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
                 if res is None:
                     stats.errors += 1
                 else:
-                    write_image_result(out, name, stem, res, stats)
+                    write_image_result(out, name, stem, res, stats, enhance=enhance)
                 if on_item:
                     on_item(i, len(files), name, res)
     else:
@@ -277,7 +292,7 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
                 res = None
             else:
                 res = pipe.process_image(p.name, img)
-                write_image_result(out, p.name, p.stem, res, stats)
+                write_image_result(out, p.name, p.stem, res, stats, enhance=enhance)
             if on_item:
                 on_item(i, len(files), p.name, res)
 

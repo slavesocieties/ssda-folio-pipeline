@@ -171,6 +171,20 @@ class FolioPipeline:
         final = geometry.compose_and_warp(image, crop_H, cw, ch,
                                           quarter_k=(-k) % 4, skew_deg=skew)
 
+        # Background tightening: drop dark non-information the page mask let
+        # through (book binding, scanner bed, finger/clamp, warp padding) while
+        # PROTECTING every on-paper ink pixel, so marginalia is never clipped.
+        # Conservative by design: returns None (keep crop) whenever it is unsure.
+        if getattr(g, "trim_background", True):
+            from .stages import content as _content
+            box = _content.paper_box(final)
+            if box is None:
+                tx0, ty0, tx1, ty1 = _content.trim_background_border(final)
+            else:
+                tx0, ty0, tx1, ty1 = box
+            if (tx1 - tx0) >= 16 and (ty1 - ty0) >= 16:
+                final = final[ty0:ty1, tx0:tx1]
+
         folio = FolioResult(label=label, crop=final,
                             rotation_deg=(90.0 * ((-k) % 4) + skew),
                             orientation_conf=oconf)

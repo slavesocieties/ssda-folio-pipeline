@@ -52,6 +52,9 @@ class GeometryConfig:
     # outward crop margin so frayed edges / marginalia are never clipped,
     # expressed as a fraction of the page diagonal (Stage 3 boundary math).
     crop_margin_frac: float = 0.045
+    # trim leftover black warp-padding / uniform background border from the
+    # finished crop (ink-guarded, never clips content). Safety net for loose masks.
+    trim_background: bool = True
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much
     seam_smoothness: float = 0.3            # DP diagonal penalty weight

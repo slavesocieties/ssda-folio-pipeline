@@ -57,12 +57,15 @@ folio page.jpg                                   # one image -> ./folio_out
 folio /scans --out /out                          # a folder
 folio /scans --out /out --jobs 6                 # 6 parallel CPU workers (big folders)
 folio /scans --out /out --resume                 # skip already-processed images
+folio /scans --out /out --enhance                # also write *_enhanced.jpg for faint pages
 folio s3://ssda-raw/v/ --out s3://ssda-folios/f/ --limit 20   # S3, 20-image dry run
 ```
 (`python -m folio.cli ...` and `python tools/folio_process.py ...` are equivalent.)
 
 - Device auto-selects CUDA, else CPU. `--device cpu` to force.
 - `--no-prepass` disables the sideways/landscape auto-uprighting.
+- `--enhance` writes a CLAHE contrast-boosted `*_enhanced.jpg` next to each faint /
+  light-ink crop, so downstream transcription can read faint handwriting.
 - `--limit N` processes at most N images (safe dry run, esp. for S3).
 - S3 mode needs AWS credentials (env or `~/.aws`); it streams with bounded
   concurrency so memory stays flat regardless of corpus size (built for 750k).

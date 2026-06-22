@@ -31,6 +31,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--jobs", type=int, default=1, help="parallel CPU workers for folders")
     ap.add_argument("--resume", action="store_true", help="skip images already processed in --out")
     ap.add_argument("--limit", type=int, default=None, help="process at most N images (safe dry run)")
+    ap.add_argument("--enhance", action="store_true",
+                    help="also write a contrast-boosted *_enhanced.jpg for faint/light-ink pages")
     ap.add_argument("--region", default=None, help="AWS region for S3 mode")
     ap.add_argument("--shard", default=None, metavar="i/N",
                     help="S3 only: process worker i of N (e.g. 0/8) for EC2/Batch fan-out")
@@ -93,7 +95,7 @@ def main(argv=None) -> int:
     stats, mode = P.run_local(args.input, args.out, device=args.device,
                               legacy=args.legacy_weights, prepass=not args.no_prepass,
                               orient_weights=args.orient_weights, jobs=args.jobs,
-                              resume=args.resume, limit=args.limit,
+                              resume=args.resume, limit=args.limit, enhance=args.enhance,
                               on_start=on_start, on_item=on_item)
     out = Path(args.out)
     print(f"\ndone: {stats.folios} folio crop(s) from {stats.images} image(s); "
