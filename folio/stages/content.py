@@ -110,11 +110,14 @@ def content_mask(image: np.ndarray, *, mask: np.ndarray | None = None
 def _drop_specks(mask: np.ndarray, min_area: int) -> np.ndarray:
     n, labels, stats, _ = cv2.connectedComponentsWithStats(
         (mask > 0).astype(np.uint8), connectivity=8)
-    out = np.zeros_like(mask)
-    for i in range(1, n):
-        if stats[i, cv2.CC_STAT_AREA] >= min_area:
-            out[labels == i] = 255
-    return out
+    if n <= 1:
+        return np.zeros_like(mask)
+    # Vectorized: build a per-label keep flag, then index it by the label image
+    # in ONE pass. The old per-component `labels == i` loop was O(components x
+    # pixels) and dominated runtime on speckled full-res scans (~45 s/image).
+    keep = stats[:, cv2.CC_STAT_AREA] >= min_area
+    keep[0] = False  # label 0 is background
+    return (keep[labels].astype(np.uint8) * 255)
 
 
 def trim_background_border(crop: np.ndarray, pad_frac: float = 0.01
