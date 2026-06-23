@@ -27,9 +27,12 @@ derivatives, (2) make every folio upright, (3) crop tightly to the folio.
 | Two-folio split | ✅ | 100% |
 | Orientation (upright) | ✅ | 98.8% (upright 100 / upside-down 97.5 / landscape 100) |
 | Deskew | ✅ | matches exhaustive search exactly, no railing |
-| Cropping | ✅ | 0/25 clipped (full page width captured) |
-| Tests | ✅ | 34 passing, CPU-only |
-| Packaging | ✅ | `pip install -e .` → `folio` + `folio-gui` |
+| Cropping (page) | ✅ | 0/25 clipped (full page width captured) |
+| **Tight crop (text region)** | ✅ | learned CRAFT crop; meaningful-pixel ~0.5–0.6 (vs 0.30 loose), coverage 1.00 (never clips); 56/56 portrait on broad sample. `--no-tight-crop` to disable |
+| **Faint-ink enhance** | ✅ | `--enhance` writes a CLAHE `*_enhanced.jpg` for faint pages |
+| **Throughput** | ✅ | ~2.6 s/image (RTX 5080, all on); 16 GPU workers ≈ 1.4 days for 750k |
+| Tests | ✅ | 51 passing, CPU-only |
+| Packaging | ✅ | `pip install -e .` → `folio` + `folio-gui`; tight crop needs `requirements-tight.txt` (EasyOCR) |
 | GUI | ✅ | drag-and-drop desktop app, verified |
 | S3 batch | ✅ wired | `--shard i/N`, `--resume`; NOT live-tested (needs AWS creds) |
 
@@ -54,7 +57,10 @@ delivering those images from S3** (see §9).
 Run the tool:
 ```bash
 PY="C:\Users\mahajar\AppData\Local\Programs\Python\Python312\python.exe"
-$PY -m pytest -q                                  # 34 tests
+$PY -m pytest -q                                  # 51 tests
+# tight crop needs EasyOCR (optional): pip install --no-deps easyocr;
+#   pip install python-bidi Shapely pyclipper ninja scikit-image PyYAML
+# on Windows set PYTHONUTF8=1 so EasyOCR's download bar doesn't crash cp1252
 $PY -m folio.cli "<image|folder>" --out <dir>     # or: folio <...> if installed
 $PY -m folio.gui                                  # or: folio-gui  (drag-and-drop)
 # S3 (needs AWS creds / IAM role):
@@ -129,8 +135,29 @@ it falls back to a dependency-free classical mode.
 6. **Low-text review gate.** `QualityConfig.min_text_frac_for_orient=0.075` flags
    sparse pages (where orientation is unreliable) for human review.
 
+7. **Sparse multi-block page → landscape band crop.** The legacy segmenter masks
+   only the densest block on a sparse page; `oriented_page_quad` takes the largest
+   connected component, cropping a portrait folio to a landscape band (e.g.
+   225290-0182 → 1826×576, lost 2/3). Fix: `pipeline._recover_page_mask` expands a
+   band mask to the full bright page within the folio's columns. Portrait crops
+   28/30 → 30/30; broad sample 56/56 portrait.
+8. **6× speed regression in `_drop_specks`.** It looped over every connected
+   component doing `labels == i` (O(components×pixels)) — 86% of runtime, 15 s/image
+   on speckled scans. Vectorized to one label lookup → **2.6 s/image**. Identical
+   output. (`tools/benchmark.py` measures; `tools/_profile.py` profiles.)
+
 Reliable clip-detection signal = **mask coverage** (crop vs U-Net page width),
 NOT crop edge-ink (over-flags on sparse/full-bleed pages).
+
+### Tight crop & faint ink (this session)
+- `folio/stages/textregion.py` — EasyOCR/CRAFT detector (lazy, optional, GPU);
+  `text_crop_box` unions detections + margin → tight crop. Safety: outlier-trim
+  OFF by default (never drop a real line); `min_keep` guard rejects tiny boxes
+  (faint under-detection) → falls back to looser crop. Default ON; `--no-tight-crop`.
+- `folio/stages/content.py` — faint-ink detector (CLAHE + Sauvola + black-hat);
+  `paper_box`/`trim_background` conservative crop; `enhance_faint` (CLAHE) for `--enhance`.
+- Known limits (see docs/METRICS.md): rare spread→one_folio mis-count (unflagged);
+  heavy-tilt spreads crop poorly (flagged). Both pre-existing count/tilt issues.
 
 ## 8. Reproduce the metrics
 

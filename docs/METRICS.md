@@ -64,11 +64,51 @@ The adaptive-threshold deskew returns the **same angle as an exhaustive search**
 and recovers known tilts within the unit-test tolerance. Earlier (global-Otsu)
 objective railed to ±15° on ~39% of page crops; the current objective: **0%**.
 
+## Cropping tightness (vs the supervisor's ground-truth text rects)
+
+Crop quality is measured as the **meaningful-pixel ratio** (ground-truth text area
+÷ crop area; Daniel's conceptual target ≈ 0.75) and **coverage** (GT text kept
+inside the crop; must stay ~1.00 = nothing clipped). `tools/eval_crop.py`:
+
+| Crop | meaningful-pixel ratio | content clipped |
+|---|---|---|
+| Full-frame (loose) | 0.30 | none |
+| `paper_box` (classical) | 0.40 | none |
+| **CRAFT text-region (default)** | **~0.5–0.6 / page** | **none (coverage 1.00)** |
+
+The learned crop (EasyOCR/CRAFT, `folio/stages/textregion.py`) removes binding,
+scanner bed, colour-calibration cards and blank margins. It **never clips**: it
+unions every detection (no outlier-drop) and rejects an implausibly small box
+(faint-page under-detection), falling back to the looser crop. On a 36-image
+broad sample (56 folios): **56/56 portrait, 0 errors, 0 landscape over-crops.**
+
+Sparse multi-block pages (text in separated blocks) used to crop to one band
+(landscape); `_recover_page_mask` now expands a band mask to the full bright page
+→ portrait crops **28/30 → 30/30** on the 20-image sample.
+
 ## Throughput
 
-~0.5 s/image single-process on an RTX 5080 (CPU-bound classical stages dominate;
-the GPU is lightly used). For 750k images: ~4.5 days single-process, or ~18 h at
-6× parallelism (`--jobs 6`, or shard the S3 prefix across workers).
+**~2.6 s/image** end-to-end on an RTX 5080 with everything on (hybrid segment +
+4-way orientation + deskew + blank-detect + CRAFT tight crop), measured by
+`tools/benchmark.py` on large scans. For 750k: ~22 days single-worker, **~1.4 days
+on 16 GPU workers**, ~0.7 days on 32. `--no-tight-crop` skips CRAFT.
+
+> Was 15 s/image until a pathological `_drop_specks` loop (O(components×pixels) on
+> speckled scans) was vectorized — a 6× speedup. Re-benchmark on the target EC2
+> instance before sizing the fleet.
+
+## Known limitations (found in broad-sample verification)
+
+- **Spread mis-counted as one folio (rare, silent):** a two-page spread with a
+  subtle gutter can be classified `one_folio` and left unsplit (e.g. `740004-0014`).
+  It is *not* flagged (the near-square aspect overlaps legitimate single folios, so
+  there is no safe geometric gate). A count-classifier limitation; would need
+  retraining on more spread examples to fix.
+- **Heavily tilted spreads (~14°+):** deskew rails at its ±15° cap and the crop
+  stays skewed/square (e.g. `701241-0057`) — but these *are* flagged for review
+  (low-text + unexpected-aspect), so not silently shipped.
+- `is_blank` can false-positive on such degenerate crops (dense text read as blank);
+  it never drops a real page on a clean crop (0/33 in earlier testing).
 
 ## Caveats
 

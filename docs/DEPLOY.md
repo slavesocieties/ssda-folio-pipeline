@@ -15,13 +15,28 @@ folio s3://ssda-raw/volumes/ --out s3://ssda-folios/folios/ --region us-east-1  
 Outputs land under the output prefix (`folios/<stem>[-A|-B].jpg` + `.json`);
 review-flagged crops go under the `review/` prefix.
 
-## Instance choice — it's CPU-bound
-The neural models are light; the classical CV stages dominate and the GPU sits
-~10% utilised. So:
-- A single big GPU instance is **underutilised**. Fine for simplicity, wasteful at scale.
-- Cheaper/faster: several **CPU instances** (e.g. `c7i`) or **AWS Batch** array
-  jobs, each processing a **shard** of the corpus. ~0.5 s/image/core.
-- A small GPU instance (`g5.xlarge`) works if you prefer one box.
+## Measured throughput (RTX 5080 laptop GPU, `tools/benchmark.py`)
+**~2.6 s/image** end-to-end with everything on (hybrid segment + 4-way orientation
++ deskew + blank-detect + learned tight crop), on large scans (2.7k–4.5k px).
+CRAFT tight cropping adds ~0.5–3 s on the biggest images; `--no-tight-crop` drops
+it. (An earlier pathological `_drop_specks` loop made this 15 s — now fixed.)
+
+| workers | ~750k wall-clock |
+|---|---|
+| 1  | ~22 days |
+| 8  | ~2.8 days |
+| 16 | ~1.4 days |
+| 32 | ~0.7 days |
+
+## Instance choice
+The neural heads (orientation, blank, count) **and** the CRAFT tight-crop detector
+run on the GPU, so this is no longer CPU-bound. Options:
+- **GPU instances** (`g5.xlarge` / `g6`), one `folio … --shard i/N` each — matches
+  the ~2.6 s/image above. Simplest path to the table.
+- **CPU instances** (`c7i`) are viable for the bulk if you pass `--no-tight-crop`
+  (skips CRAFT); the remaining heads are small. Tight cropping on CPU is slow.
+- Re-run `tools/benchmark.py <dir>` on your chosen instance to get its real number
+  before sizing the fleet.
 
 ## Horizontal fan-out with `--shard`
 Each worker takes `--shard i/N` and processes only its share of the keys
@@ -31,7 +46,7 @@ Each worker takes `--shard i/N` and processes only its share of the keys
 folio s3://ssda-raw/volumes/ --out s3://ssda-folios/folios/ --shard 0/8 --region us-east-1
 ```
 On **AWS Batch**, set N = array size and pass `--shard ${AWS_BATCH_JOB_ARRAY_INDEX}/N`.
-8 workers ≈ the full 750k in ~half a day; scale N to hit your deadline.
+16 GPU workers ≈ the full 750k in ~1.4 days; scale N to hit your deadline.
 
 ## IAM policy (least privilege)
 ```json
