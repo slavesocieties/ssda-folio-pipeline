@@ -144,7 +144,7 @@ it falls back to a dependency-free classical mode.
 8. **6× speed regression in `_drop_specks`.** It looped over every connected
    component doing `labels == i` (O(components×pixels)) — 86% of runtime, 15 s/image
    on speckled scans. Vectorized to one label lookup → **2.6 s/image**. Identical
-   output. (`tools/benchmark.py` measures; `tools/_profile.py` profiles.)
+   output. (`tools/benchmark.py` measures per-image throughput + 750k projection.)
 
 Reliable clip-detection signal = **mask coverage** (crop vs U-Net page width),
 NOT crop edge-ink (over-flags on sparse/full-bleed pages).
