@@ -58,7 +58,7 @@ class GeometryConfig:
     # tighten the finished crop to the detected text region (learned CRAFT
     # detector) for the supervisor's "tight" look. No-ops gracefully when EasyOCR
     # is unavailable or no text is found (so it can never clip content).
-    tight_crop: bool = True
+    tight_crop: bool = False
     tight_crop_margin_frac: float = 0.012
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much

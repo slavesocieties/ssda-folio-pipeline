@@ -101,19 +101,23 @@ class FolioPipeline:
                     energy_weights=self.cfg.geom.energy_weights,
                 )
                 res.gutter_seam = seam.tolist()
-                # restrict each page's mask to its side of the seam
+                # restrict each page's mask to its side of the seam, then bake an
+                # ASYMMETRIC crop margin into the mask: dilate to give the 3 outer
+                # edges their protective margin (frayed edges / marginalia), then
+                # re-clip at the seam so the SPINE edge stays exactly at the gutter
+                # — no facing-page sliver. _finish_page then crops with margin 0.
                 xs = np.arange(image.shape[1])[None, :]
-                left_sel = xs <= seam[:, None]
+                left_sel = (xs <= seam[:, None]).astype(np.uint8)
                 page_specs = [
-                    ("A", masks[0] * left_sel.astype(np.uint8)),
-                    ("B", masks[1] * (~left_sel).astype(np.uint8)),
+                    ("A", self._margin_to_seam(masks[0], left_sel), 0.0),
+                    ("B", self._margin_to_seam(masks[1], 1 - left_sel), 0.0),
                 ]
             else:
-                page_specs = [("", masks[0])]
+                page_specs = [("", masks[0], None)]
 
             # Stages 3b/5/6/7 per page
-            for label, mask in page_specs:
-                folio = self._finish_page(image, mask, label)
+            for label, mask, mfrac in page_specs:
+                folio = self._finish_page(image, mask, label, margin_frac=mfrac)
                 if folio is not None:
                     res.folios.append(folio)
 
@@ -183,14 +187,34 @@ class FolioPipeline:
             return new
         return mask
 
+    def _margin_to_seam(self, mask: np.ndarray, sel: np.ndarray) -> np.ndarray:
+        """Build a two-folio page mask with an ASYMMETRIC margin: keep only this
+        page's side of the seam (``sel`` = 1 on this side), dilate by the crop
+        margin to give the outer edges breathing room, then re-clip at the seam so
+        the spine edge is exactly at the gutter (no facing-page sliver)."""
+        import cv2
+        m = (mask.astype(bool) & sel.astype(bool)).astype(np.uint8)
+        ys = np.where(m.any(axis=1))[0]
+        xs = np.where(m.any(axis=0))[0]
+        if ys.size == 0 or xs.size == 0:
+            return m
+        diag = float(np.hypot(int(ys.max()) - int(ys.min()), int(xs.max()) - int(xs.min())))
+        k = max(1, int(self.cfg.geom.crop_margin_frac * diag))
+        d = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+        return (d.astype(bool) & sel.astype(bool)).astype(np.uint8)
+
     def _finish_page(self, image: np.ndarray, mask: np.ndarray,
-                     label: str) -> Optional[FolioResult]:
+                     label: str, margin_frac: Optional[float] = None) -> Optional[FolioResult]:
         g = self.cfg.geom
         q = self.cfg.quality
+        if margin_frac is None:
+            margin_frac = g.crop_margin_frac
         # recover a band mask the legacy segmenter may have produced on a sparse page
         mask = self._recover_page_mask(image, mask)
-        # oriented crop quad (Stage 3 boundary math) + single warp
-        quad = geometry.oriented_page_quad(mask, margin_frac=g.crop_margin_frac)
+        # oriented crop quad (Stage 3 boundary math) + single warp. ``margin_frac``
+        # is 0 for two-folio sides (the margin is already baked into the mask,
+        # asymmetrically, so the spine edge stays tight at the gutter).
+        quad = geometry.oriented_page_quad(mask, margin_frac=margin_frac)
         crop_H, cw, ch = geometry.crop_homography(quad)
         # provisional upright crop (used for the final geometry + skew)
         provisional = geometry.compose_and_warp(image, crop_H, cw, ch)
