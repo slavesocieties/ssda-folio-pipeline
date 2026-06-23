@@ -48,6 +48,14 @@ Bake the legacy `.pth` + trained `weights/*.pt` into the AMI/container, or sync
 them from S3 on boot to the paths in `folio/config.py` (auto-discovered from
 `./legacy_weights` and `weights/`).
 
+## Tight cropping (optional)
+Tight cropping (on by default) uses EasyOCR's CRAFT detector. For the EC2 run,
+`pip install -r requirements-tight.txt` and pre-download the CRAFT model into the
+AMI (`python -c "import easyocr; easyocr.Reader(['en'])"`) so workers don't each
+fetch it. Or pass `--no-tight-crop` to skip it (keeps the looser page crop). It
+adds ~0.1–0.3 s/folio on GPU; the detector never clips content (it no-ops when it
+finds no text).
+
 ## Idempotency / resume
 The run is shard-stable, so a failed/spot-killed worker can just be relaunched
 with the same `--shard i/N`. Add `--resume` to skip inputs whose output already

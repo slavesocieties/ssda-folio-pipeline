@@ -95,7 +95,8 @@ def test_run_local_classical_end_to_end(tmp_path, monkeypatch):
     src = tmp_path / "page.jpg"
     cv2.imwrite(str(src), img)
     out = tmp_path / "out"
-    stats, mode = P.run_local(src, out, device="cpu", legacy=None)
+    # tight_crop=False keeps the test hermetic (no EasyOCR / GPU dependency)
+    stats, mode = P.run_local(src, out, device="cpu", legacy=None, tight_crop=False)
     assert stats.images == 1
     assert stats.folios >= 1
     assert (out / "manifest.csv").exists()

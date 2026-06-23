@@ -1,0 +1,14 @@
+# Optional: learned text-region TIGHT cropping (Daniel's ~0.75 "tight" target).
+# Install on top of the base requirements to enable `--tight-crop` (on by default
+# when present). Pulls EasyOCR's CRAFT text detector. Install WITHOUT touching the
+# CUDA torch build:
+#     pip install --no-deps easyocr
+#     pip install python-bidi Shapely pyclipper ninja scikit-image PyYAML
+# (listed here for reference / CI; the tool no-ops gracefully if these are absent)
+easyocr>=1.7
+python-bidi>=0.4
+Shapely>=2.0
+pyclipper>=1.3
+ninja>=1.11
+scikit-image>=0.22
+PyYAML>=6.0

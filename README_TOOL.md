@@ -66,6 +66,13 @@ folio s3://ssda-raw/v/ --out s3://ssda-folios/f/ --limit 20   # S3, 20-image dry
 - `--no-prepass` disables the sideways/landscape auto-uprighting.
 - `--enhance` writes a CLAHE contrast-boosted `*_enhanced.jpg` next to each faint /
   light-ink crop, so downstream transcription can read faint handwriting.
+- **Tight cropping is ON by default** (the supervisor's "tight" look): each upright
+  folio is cropped to its detected text region (a learned CRAFT detector), removing
+  binding, scanner bed, colour-cards and blank margins. It never clips content — if
+  the detector is unavailable or finds no text it keeps the looser page crop.
+  Enable by installing the optional extra (`requirements-tight.txt`); disable per-run
+  with `--no-tight-crop`. Measured vs the supervisor's ground-truth boxes: coverage
+  1.00 (nothing clipped), meaningful-pixel ratio ~0.5–0.6 per page (vs 0.30 loose).
 - `--limit N` processes at most N images (safe dry run, esp. for S3).
 - S3 mode needs AWS credentials (env or `~/.aws`); it streams with bounded
   concurrency so memory stays flat regardless of corpus size (built for 750k).

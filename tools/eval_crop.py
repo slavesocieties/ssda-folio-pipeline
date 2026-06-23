@@ -37,6 +37,12 @@ def m_paperbox(im):
     h, w = im.shape[:2]
     return b if b else (0, 0, w, h)
 
+def m_textregion(im):
+    from folio.stages import textregion
+    b = textregion.text_crop_box(im, margin_frac=0.012)
+    h, w = im.shape[:2]
+    return b if b else (0, 0, w, h)
+
 def evaluate(method, rects, detail=False):
     cov, mean, rows = [], [], []
     for fn, rs in rects.items():
@@ -66,8 +72,9 @@ if __name__ == "__main__":
     rects = load_gt()
     print(f"{len(rects)} annotated images\n")
     for name, fn in [("full-frame (loose)", m_full),
-                     ("paper_box (current)", m_paperbox)]:
-        cov, mean = evaluate(fn, rects, detail=False)
+                     ("paper_box (current)", m_paperbox),
+                     ("textregion (learned)", m_textregion)]:
+        cov, mean = evaluate(fn, rects, detail=(name == "textregion (learned)"))
         print(f"{name:24s}  coverage={cov.mean():.3f} (min {cov.min():.2f})   "
               f"meaningful={mean.mean():.3f}   "
               f"clipping<0.98: {int((cov<0.98).sum())}/{len(cov)}")

@@ -185,6 +185,15 @@ class FolioPipeline:
             if (tx1 - tx0) >= 16 and (ty1 - ty0) >= 16:
                 final = final[ty0:ty1, tx0:tx1]
 
+        # Tight crop to the detected text region (learned). Runs last, on the
+        # upright single-folio crop. Gracefully no-ops (keeps the looser crop)
+        # when EasyOCR is unavailable or finds no text -> never clips content.
+        if getattr(g, "tight_crop", False):
+            from .stages import textregion as _tr
+            tb = _tr.text_crop_box(final, margin_frac=g.tight_crop_margin_frac)
+            if tb is not None and (tb[2] - tb[0]) >= 16 and (tb[3] - tb[1]) >= 16:
+                final = final[tb[1]:tb[3], tb[0]:tb[2]]
+
         folio = FolioResult(label=label, crop=final,
                             rotation_deg=(90.0 * ((-k) % 4) + skew),
                             orientation_conf=oconf)

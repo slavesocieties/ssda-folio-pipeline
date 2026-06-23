@@ -120,9 +120,11 @@ def _attach_blank(pipe, cfg, mode: str) -> str:
 
 
 def make_config(device: Optional[str] = None,
-                orient_weights: Optional[str] = None) -> PipelineConfig:
+                orient_weights: Optional[str] = None,
+                tight_crop: bool = True) -> PipelineConfig:
     cfg = PipelineConfig()
     cfg.model.device = device or auto_device()
+    cfg.geom.tight_crop = tight_crop
     if orient_weights:
         cfg.model.orientation_weights = str(Path(orient_weights))
     else:
@@ -223,8 +225,9 @@ def write_manifest(out: Path, stats: RunStats) -> None:
 _WORKER = {}
 
 
-def _worker_init(legacy, prepass, orient_weights):
-    cfg = make_config(device="cpu", orient_weights=orient_weights)  # CPU per worker
+def _worker_init(legacy, prepass, orient_weights, tight_crop=True):
+    cfg = make_config(device="cpu", orient_weights=orient_weights,
+                      tight_crop=tight_crop)  # CPU per worker
     pipe, _ = build_pipeline(cfg, legacy, prepass=prepass)
     _WORKER["pipe"] = pipe
 
@@ -241,7 +244,7 @@ def _worker_run(path_str):
 # ------------------------------------------------------------------- orchestration
 def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
               orient_weights=None, jobs=1, resume=False, limit=None,
-              enhance=False, on_start=None, on_item=None) -> Tuple[RunStats, str]:
+              enhance=False, tight_crop=True, on_start=None, on_item=None) -> Tuple[RunStats, str]:
     """Process a local image or folder. Returns ``(stats, mode)``.
 
     ``jobs>1`` runs a CPU process pool (the work is CPU-bound; the GPU models are
@@ -271,7 +274,7 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
         import multiprocessing as mp
         ctx = mp.get_context("spawn")
         with ctx.Pool(jobs, initializer=_worker_init,
-                      initargs=(legacy, prepass, orient_weights)) as pool:
+                      initargs=(legacy, prepass, orient_weights, tight_crop)) as pool:
             for i, (name, stem, res) in enumerate(
                     pool.imap_unordered(_worker_run, [str(p) for p in files]), 1):
                 if res is None:
@@ -281,7 +284,8 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
                 if on_item:
                     on_item(i, len(files), name, res)
     else:
-        cfg = make_config(device=device, orient_weights=orient_weights)
+        cfg = make_config(device=device, orient_weights=orient_weights,
+                          tight_crop=tight_crop)
         pipe, mode = build_pipeline(cfg, legacy, prepass=prepass)
         if on_start:
             on_start(len(files), mode, cfg.model.device)
@@ -302,11 +306,12 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
 
 def run_s3(input_uri, out_uri, *, device=None, legacy=None, prepass=True,
            orient_weights=None, region=None, limit=None, shard=None,
-           resume=False) -> Tuple[dict, str]:
+           resume=False, tight_crop=True) -> Tuple[dict, str]:
     """Stream-process an S3 prefix back to S3. Returns ``(stats, mode)``.
     ``shard=(i, n)`` processes only worker i-of-n's keys (for EC2/Batch fan-out);
     ``resume`` skips inputs whose output already exists."""
-    cfg = make_config(device=device, orient_weights=orient_weights)
+    cfg = make_config(device=device, orient_weights=orient_weights,
+                      tight_crop=tight_crop)
     cfg.s3.input_bucket, cfg.s3.input_prefix = parse_s3(input_uri)
     cfg.s3.output_bucket, out_prefix = parse_s3(out_uri)
     cfg.s3.output_prefix = out_prefix or "folios/"
