@@ -143,10 +143,52 @@ class FolioPipeline:
         pad = int(0.5 * (x1 - x0))
         return image[:, max(0, x0 - pad):min(w, x1 + pad)]
 
+    @staticmethod
+    def _recover_page_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Guard against the legacy segmenter under-covering a sparse, multi-block
+        page (masking only the densest text block, which then crops a portrait
+        folio down to a landscape band). If the masked region is only a band of a
+        much taller bright page, expand it to that full bright page WITHIN the
+        folio's own column span (so a two-folio side never pulls in its neighbour).
+        A no-op whenever the mask already covers the page."""
+        import cv2
+        # Use the mask's LARGEST CONNECTED COMPONENT, since that is what
+        # oriented_page_quad crops to. On a sparse page the mask fragments into
+        # separate text blocks, so its overall bbox can span the page while the
+        # largest component is only one band.
+        nm, lm, sm, _ = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8), 8)
+        if nm <= 1:
+            return mask
+        mbig = 1 + int(np.argmax(sm[1:, cv2.CC_STAT_AREA]))
+        mx0 = int(sm[mbig, cv2.CC_STAT_LEFT]); mx1 = mx0 + int(sm[mbig, cv2.CC_STAT_WIDTH]) - 1
+        mask_h = int(sm[mbig, cv2.CC_STAT_HEIGHT])
+        band = image[:, mx0:mx1 + 1]
+        gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY) if band.ndim == 3 else band
+        blur = cv2.GaussianBlur(gray, (0, 0), max(1.5, 0.004 * min(gray.shape[:2])))
+        _, bright = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        bk = max(3, int(0.02 * min(gray.shape[:2])) | 1)
+        bright = cv2.morphologyEx(bright, cv2.MORPH_CLOSE,
+                                  cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (bk, bk)))
+        n, lb, st, _ = cv2.connectedComponentsWithStats(bright, connectivity=8)
+        if n <= 1:
+            return mask
+        big = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        bh = int(st[big, cv2.CC_STAT_HEIGHT])
+        area = int(st[big, cv2.CC_STAT_AREA])
+        # recover only when the bright page is much taller than the masked band
+        # AND is a substantial region (a real page, not a stripe of noise)
+        if bh > 1.5 * max(mask_h, 1) and area > 0.30 * band.shape[0] * band.shape[1]:
+            new = np.zeros(mask.shape[:2], np.uint8)
+            new[:, mx0:mx1 + 1] = (lb == big).astype(np.uint8)
+            return new
+        return mask
+
     def _finish_page(self, image: np.ndarray, mask: np.ndarray,
                      label: str) -> Optional[FolioResult]:
         g = self.cfg.geom
         q = self.cfg.quality
+        # recover a band mask the legacy segmenter may have produced on a sparse page
+        mask = self._recover_page_mask(image, mask)
         # oriented crop quad (Stage 3 boundary math) + single warp
         quad = geometry.oriented_page_quad(mask, margin_frac=g.crop_margin_frac)
         crop_H, cw, ch = geometry.crop_homography(quad)
