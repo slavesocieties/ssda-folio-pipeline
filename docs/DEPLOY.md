@@ -71,6 +71,15 @@ fetch it. Or pass `--no-tight-crop` to skip it (keeps the looser page crop). It
 adds ~0.1–0.3 s/folio on GPU; the detector never clips content (it no-ops when it
 finds no text).
 
+## Per-volume consistency (optional final pass)
+For de-facto production images, run `tools/volume_normalize.py <out_dir>` after a
+volume's images are processed. It locks one page size per volume (from the
+volume's high-confidence crops) and standardizes every crop to identical
+dimensions — **padding only, never cropping**, so the full folio is preserved.
+It also writes `volume_report.csv` flagging size-outlier crops (likely mis-crops)
+for QA. Group the run by volume (or run it once over the full output) so each
+volume's crops are present together.
+
 ## Idempotency / resume
 The run is shard-stable, so a failed/spot-killed worker can just be relaunched
 with the same `--shard i/N`. Add `--resume` to skip inputs whose output already
