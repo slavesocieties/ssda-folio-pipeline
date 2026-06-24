@@ -46,3 +46,25 @@ def test_empty_side_is_safe():
     mask = np.zeros((100, 100), np.uint8)
     sel = np.zeros((100, 100), np.uint8); sel[:, :50] = 1
     assert _run(mask, sel).sum() == 0
+
+
+def test_enforce_aspect_extends_square_mask():
+    # a square content mask in a tall image -> extended vertically toward portrait,
+    # width unchanged, never cropped
+    img_hw = (1000, 600)
+    mask = np.zeros(img_hw, np.uint8)
+    mask[400:600, 100:500] = 1               # 400x200, w/h = 2.0 (very wide)
+    out = FolioPipeline._enforce_page_aspect(mask, img_hw, 0.80)
+    ys = np.where(out.any(axis=1))[0]; xs = np.where(out.any(axis=0))[0]
+    w = xs.max()-xs.min()+1; h = ys.max()-ys.min()+1
+    assert w == 400                          # width unchanged
+    assert w / h <= 0.80 + 0.02              # now portrait enough
+    assert h > 200                           # extended (added area, never cropped)
+
+
+def test_enforce_aspect_noop_on_portrait():
+    img_hw = (1000, 600)
+    mask = np.zeros(img_hw, np.uint8)
+    mask[100:900, 150:450] = 1               # 300x800, w/h = 0.375 (already portrait)
+    out = FolioPipeline._enforce_page_aspect(mask, img_hw, 0.80)
+    assert int(out.sum()) == int(mask.sum())  # unchanged

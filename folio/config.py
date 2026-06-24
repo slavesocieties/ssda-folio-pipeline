@@ -60,6 +60,11 @@ class GeometryConfig:
     # is unavailable or no text is found (so it can never clip content).
     tight_crop: bool = False
     tight_crop_margin_frac: float = 0.012
+    # Anti-over-crop: a sparse page (text not filling the sheet) can crop square.
+    # If the crop is wider than this w/h, EXTEND it (vertically, into the page)
+    # toward a portrait shape so the full folio is kept -- only ever adds area,
+    # never crops tighter (no info lost). 0 disables.
+    max_crop_aspect: float = 0.80
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much
     seam_smoothness: float = 0.3            # DP diagonal penalty weight

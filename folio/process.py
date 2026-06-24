@@ -121,7 +121,7 @@ def _attach_blank(pipe, cfg, mode: str) -> str:
 
 def make_config(device: Optional[str] = None,
                 orient_weights: Optional[str] = None,
-                tight_crop: bool = True) -> PipelineConfig:
+                tight_crop: bool = False) -> PipelineConfig:
     cfg = PipelineConfig()
     cfg.model.device = device or auto_device()
     cfg.geom.tight_crop = tight_crop
@@ -225,7 +225,7 @@ def write_manifest(out: Path, stats: RunStats) -> None:
 _WORKER = {}
 
 
-def _worker_init(legacy, prepass, orient_weights, tight_crop=True):
+def _worker_init(legacy, prepass, orient_weights, tight_crop=False):
     cfg = make_config(device="cpu", orient_weights=orient_weights,
                       tight_crop=tight_crop)  # CPU per worker
     pipe, _ = build_pipeline(cfg, legacy, prepass=prepass)
@@ -244,7 +244,7 @@ def _worker_run(path_str):
 # ------------------------------------------------------------------- orchestration
 def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
               orient_weights=None, jobs=1, resume=False, limit=None,
-              enhance=False, tight_crop=True, on_start=None, on_item=None) -> Tuple[RunStats, str]:
+              enhance=False, tight_crop=False, on_start=None, on_item=None) -> Tuple[RunStats, str]:
     """Process a local image or folder. Returns ``(stats, mode)``.
 
     ``jobs>1`` runs a CPU process pool (the work is CPU-bound; the GPU models are
@@ -306,7 +306,7 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
 
 def run_s3(input_uri, out_uri, *, device=None, legacy=None, prepass=True,
            orient_weights=None, region=None, limit=None, shard=None,
-           resume=False, tight_crop=True) -> Tuple[dict, str]:
+           resume=False, tight_crop=False) -> Tuple[dict, str]:
     """Stream-process an S3 prefix back to S3. Returns ``(stats, mode)``.
     ``shard=(i, n)`` processes only worker i-of-n's keys (for EC2/Batch fan-out);
     ``resume`` skips inputs whose output already exists."""
@@ -321,3 +321,4 @@ def run_s3(input_uri, out_uri, *, device=None, legacy=None, prepass=True,
     pipe, mode = build_pipeline(cfg, legacy, prepass=prepass)
     stats = asyncio.run(pipe.run_s3(limit=limit, shard=shard, resume=resume))
     return stats, mode
+

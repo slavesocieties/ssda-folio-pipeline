@@ -187,6 +187,37 @@ class FolioPipeline:
             return new
         return mask
 
+    @staticmethod
+    def _enforce_page_aspect(mask: np.ndarray, img_hw, max_aspect: float) -> np.ndarray:
+        """Anti-over-crop: if the page mask is wider than ``max_aspect`` (w/h) —
+        a sparse page where text doesn't fill the sheet, so the crop would come
+        out square — EXTEND it vertically (into the rest of the folio, clamped to
+        the image) toward a portrait shape. Only ever adds area, so no content is
+        lost. Biases the extension to whichever side has room (content at the top
+        of the page extends downward). No-op when already portrait enough."""
+        if not max_aspect or max_aspect <= 0:
+            return mask
+        ys = np.where(mask.any(axis=1))[0]
+        xs = np.where(mask.any(axis=0))[0]
+        if ys.size == 0 or xs.size == 0:
+            return mask
+        x0, x1 = int(xs.min()), int(xs.max())
+        y0, y1 = int(ys.min()), int(ys.max())
+        w, h = x1 - x0 + 1, y1 - y0 + 1
+        if w <= max_aspect * h:
+            return mask                              # already portrait enough
+        H = int(img_hw[0])
+        extra = int(round(w / max_aspect)) - h
+        top, bot = extra // 2, extra - extra // 2
+        top = min(top, y0); bot = min(bot, H - 1 - y1)
+        deficit = extra - (top + bot)                # redistribute to the side with room
+        if deficit > 0:
+            add_top = min(deficit, y0 - top); top += add_top
+            bot = min(H - 1 - y1, bot + (deficit - add_top))
+        out = mask.copy()
+        out[y0 - top:y1 + bot + 1, x0:x1 + 1] = 1
+        return out
+
     def _margin_to_seam(self, mask: np.ndarray, sel: np.ndarray) -> np.ndarray:
         """Build a two-folio page mask with an ASYMMETRIC margin: keep only this
         page's side of the seam (``sel`` = 1 on this side), dilate by the crop
@@ -211,6 +242,8 @@ class FolioPipeline:
             margin_frac = g.crop_margin_frac
         # recover a band mask the legacy segmenter may have produced on a sparse page
         mask = self._recover_page_mask(image, mask)
+        # keep the full folio: extend a square (sparse-page) crop toward portrait
+        mask = self._enforce_page_aspect(mask, image.shape[:2], g.max_crop_aspect)
         # oriented crop quad (Stage 3 boundary math) + single warp. ``margin_frac``
         # is 0 for two-folio sides (the margin is already baked into the mask,
         # asymmetrically, so the spine edge stays tight at the gutter).
@@ -248,6 +281,18 @@ class FolioPipeline:
                 tx0, ty0, tx1, ty1 = _content.trim_background_border(final)
             else:
                 tx0, ty0, tx1, ty1 = box
+            # Anti-over-crop: the background trim removes side margins, but on a
+            # sparse page it would also crop the blank balance of the sheet and
+            # leave a square. Don't let it make the crop squarer than max_crop_aspect
+            # -- keep the page height (final already spans the full folio), only
+            # trim the sides. Adds no pixels beyond `final`, so never invents content.
+            ma = g.max_crop_aspect
+            if ma and (tx1 - tx0) > ma * (ty1 - ty0):
+                need = int(round((tx1 - tx0) / ma))
+                cy = (ty0 + ty1) // 2
+                ty0 = max(0, cy - need // 2)
+                ty1 = min(final.shape[0], ty0 + need)
+                ty0 = max(0, ty1 - need)
             if (tx1 - tx0) >= 16 and (ty1 - ty0) >= 16:
                 final = final[ty0:ty1, tx0:tx1]
 
