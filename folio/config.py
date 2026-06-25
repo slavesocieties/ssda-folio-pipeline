@@ -66,6 +66,10 @@ class GeometryConfig:
     # toward a portrait shape so the full folio is kept -- only ever adds area,
     # never crops tighter (no info lost). 0 disables.
     max_crop_aspect: float = 0.80
+    # white-out every non-folio pixel (background, facing-page sliver, binding)
+    # using the precise learned page mask, leaving only the folio. Needs the
+    # learned segmenter; no-op without it.
+    mask_background: bool = True
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much
     seam_smoothness: float = 0.3            # DP diagonal penalty weight

@@ -92,10 +92,12 @@ class FolioPipeline:
             # Learned folio segmenter (precise, background-agnostic page boundary)
             # supersedes the legacy crop mask. It returns the whole paper region
             # (both pages on a spread); the seam split below divides it per folio.
+            learned = None
             if self.folio_segmenter is not None:
                 lp = self.folio_segmenter.page_mask(image)
                 if lp.any() and float(lp.mean()) > 0.05:
                     masks = [lp for _ in masks]
+                    learned = lp   # precise page region, for the background white-out
 
             # Stage 2 global skew estimate (from union mask) -> recorded only;
             # fine skew is applied per-folio in Stage 5 for accuracy.
@@ -120,16 +122,22 @@ class FolioPipeline:
                 # — no facing-page sliver. _finish_page then crops with margin 0.
                 xs = np.arange(image.shape[1])[None, :]
                 left_sel = (xs <= seam[:, None]).astype(np.uint8)
+                right_sel = 1 - left_sel
+                # white-out mask = the TRUE learned page on this side (no outer
+                # margin), so binding/background go but marginalia stays
+                wmA = (learned * left_sel) if learned is not None else None
+                wmB = (learned * right_sel) if learned is not None else None
                 page_specs = [
-                    ("A", self._margin_to_seam(masks[0], left_sel), 0.0),
-                    ("B", self._margin_to_seam(masks[1], 1 - left_sel), 0.0),
+                    ("A", self._margin_to_seam(masks[0], left_sel), 0.0, wmA),
+                    ("B", self._margin_to_seam(masks[1], right_sel), 0.0, wmB),
                 ]
             else:
-                page_specs = [("", masks[0], None)]
+                page_specs = [("", masks[0], None, None)]
 
             # Stages 3b/5/6/7 per page
-            for label, mask, mfrac in page_specs:
-                folio = self._finish_page(image, mask, label, margin_frac=mfrac)
+            for label, mask, mfrac, wmask in page_specs:
+                folio = self._finish_page(image, mask, label, margin_frac=mfrac,
+                                          white_mask=wmask)
                 if folio is not None:
                     res.folios.append(folio)
 
@@ -247,13 +255,18 @@ class FolioPipeline:
         return (d.astype(bool) & sel.astype(bool)).astype(np.uint8)
 
     def _finish_page(self, image: np.ndarray, mask: np.ndarray,
-                     label: str, margin_frac: Optional[float] = None) -> Optional[FolioResult]:
+                     label: str, margin_frac: Optional[float] = None,
+                     white_mask: Optional[np.ndarray] = None) -> Optional[FolioResult]:
         g = self.cfg.geom
         q = self.cfg.quality
         if margin_frac is None:
             margin_frac = g.crop_margin_frac
         # recover a band mask the legacy segmenter may have produced on a sparse page
         mask = self._recover_page_mask(image, mask)
+        # the precise page region — used to white-out every non-folio pixel
+        # (background, facing-page sliver, binding). For two-folio sides the caller
+        # passes the un-margined learned half so binding goes but marginalia stays.
+        true_mask = white_mask if white_mask is not None else mask.copy()
         # keep the full folio: extend a square (sparse-page) crop toward portrait
         mask = self._enforce_page_aspect(mask, image.shape[:2], g.max_crop_aspect)
         # oriented crop quad (Stage 3 boundary math) + single warp. ``margin_frac``
@@ -282,11 +295,25 @@ class FolioPipeline:
         final = geometry.compose_and_warp(image, crop_H, cw, ch,
                                           quarter_k=(-k) % 4, skew_deg=skew)
 
-        # Background tightening: drop dark non-information the page mask let
-        # through (book binding, scanner bed, finger/clamp, warp padding) while
-        # PROTECTING every on-paper ink pixel, so marginalia is never clipped.
-        # Conservative by design: returns None (keep crop) whenever it is unsure.
-        if getattr(g, "trim_background", True):
+        # White-out non-folio pixels using the precise LEARNED page mask: every
+        # pixel outside the folio (background, facing-page sliver, binding, the
+        # portrait aspect-padding) becomes white, leaving only the folio. Only
+        # with the learned segmenter (its mask is precise enough to trust);
+        # dilated a hair so the page edge is never clipped.
+        masked_out = False
+        if getattr(g, "mask_background", True) and self.folio_segmenter is not None:
+            fm = geometry.compose_and_warp(
+                (true_mask > 0).astype(np.uint8) * 255, crop_H, cw, ch,
+                quarter_k=(-k) % 4, skew_deg=skew,
+                interp=cv2.INTER_NEAREST, border=cv2.BORDER_CONSTANT, border_value=0)
+            grow = max(3, int(0.004 * min(final.shape[:2])) | 1)
+            fm = cv2.dilate(fm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
+            final[fm < 127] = 255
+            masked_out = True
+
+        # Background tightening (skipped when we white-out — the mask is
+        # authoritative): drop dark non-information the page mask let through.
+        if not masked_out and getattr(g, "trim_background", True):
             from .stages import content as _content
             box = _content.paper_box(final)
             if box is None:

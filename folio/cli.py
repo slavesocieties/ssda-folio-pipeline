@@ -36,6 +36,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tight-crop", action="store_true",
                     help="crop tight to the detected text region (learned). Default OFF: "
                          "keep the FULL folio (Daniel's preferred behavior).")
+    ap.add_argument("--no-mask-background", action="store_true",
+                    help="keep the natural rectangular crop instead of white-ing out "
+                         "non-folio pixels (background/facing-page/binding). Needs the learned segmenter.")
     ap.add_argument("--region", default=None, help="AWS region for S3 mode")
     ap.add_argument("--shard", default=None, metavar="i/N",
                     help="S3 only: process worker i of N (e.g. 0/8) for EC2/Batch fan-out")
@@ -66,7 +69,8 @@ def main(argv=None) -> int:
                                    legacy=args.legacy_weights, prepass=not args.no_prepass,
                                    orient_weights=args.orient_weights, region=args.region,
                                    limit=args.limit, shard=_parse_shard(args.shard),
-                                   resume=args.resume, tight_crop=args.tight_crop)
+                                   resume=args.resume, tight_crop=args.tight_crop,
+                                   mask_background=not args.no_mask_background)
         except Exception as e:  # boto/credentials/region issues
             print(f"S3 run failed: {type(e).__name__}: {e}", file=sys.stderr)
             print("  check AWS credentials (env / ~/.aws), bucket names, and region.", file=sys.stderr)
@@ -100,6 +104,7 @@ def main(argv=None) -> int:
                               orient_weights=args.orient_weights, jobs=args.jobs,
                               resume=args.resume, limit=args.limit, enhance=args.enhance,
                               tight_crop=args.tight_crop,
+                              mask_background=not args.no_mask_background,
                               on_start=on_start, on_item=on_item)
     out = Path(args.out)
     print(f"\ndone: {stats.folios} folio crop(s) from {stats.images} image(s); "

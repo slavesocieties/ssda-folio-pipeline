@@ -92,15 +92,20 @@ def compose_and_warp(
     crop_h: int,
     quarter_k: int = 0,
     skew_deg: float = 0.0,
+    interp: int = cv2.INTER_CUBIC,
+    border: int = cv2.BORDER_REPLICATE,
+    border_value: int = 0,
 ) -> np.ndarray:
     """Compose crop homography, 90*k turn and fine skew into ONE matrix and
     apply it with a single warpPerspective. This avoids the legacy pattern of
     chained rotate(expand=True) calls that compound blur and re-pad repeatedly.
+
+    ``interp``/``border``/``border_value`` are exposed so the same transform can
+    warp a *mask* (NEAREST + CONSTANT 0) in lockstep with the image crop.
     """
     # after crop the canvas is crop_w x crop_h
     q_M, w1, h1 = quarter_turn_matrix(quarter_k, crop_w, crop_h)
     s_M, w2, h2 = rotation_matrix_3x3(skew_deg, w1, h1)
     T = s_M @ q_M @ crop_H
-    border = cv2.BORDER_REPLICATE
-    return cv2.warpPerspective(image, T, (w2, h2), flags=cv2.INTER_CUBIC,
-                               borderMode=border)
+    return cv2.warpPerspective(image, T, (w2, h2), flags=interp,
+                               borderMode=border, borderValue=border_value)
