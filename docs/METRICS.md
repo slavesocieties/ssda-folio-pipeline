@@ -83,6 +83,18 @@ Verified: the torn light-background document (`113754`) that classical failed on
 cleanly. Train: `python -m folio.training.seg --images <dir> --masks <dir>`.
 Reproduces from `preprocessed/{images,masks}` (Daniel's mask set).
 
+## Entry (record) segmentation — downstream capability
+
+Same U-Net architecture trained (`--invert`, mask foreground is black) on Daniel's
+**117 entry-level masks** (`ground truth/`, sources from `original images/`) to
+predict per-folio **entry/record regions** for downstream transcription — separate
+from the folio crop/orient pipeline. Apply with `tools/segment_entries.py <crops>
+<out>`: it splits the predicted mask into individual entry boxes (connected
+components, reading order) and writes an overlay + `<stem>.json`. Verified on real
+spreads it isolates the record text-blocks (~5/page) and excludes margins;
+first-pass quality (merges some adjacent entries, misses tiny margin-number boxes)
+— more masks / instance separation / higher resolution would sharpen it.
+
 ## Cropping tightness (vs the supervisor's ground-truth text rects)
 
 Crop quality is measured as the **meaningful-pixel ratio** (ground-truth text area
@@ -107,10 +119,11 @@ Sparse multi-block pages (text in separated blocks) used to crop to one band
 
 ## Throughput
 
-**~2.6 s/image** end-to-end on an RTX 5080 with everything on (hybrid segment +
-4-way orientation + deskew + blank-detect + CRAFT tight crop), measured by
-`tools/benchmark.py` on large scans. For 750k: ~22 days single-worker, **~1.4 days
-on 16 GPU workers**, ~0.7 days on 32. `--no-tight-crop` skips CRAFT.
+**~3 s/image** on an RTX 5080 with the production stack (hybrid segment + learned
+folio segmentation + 4-way orientation + deskew + blank-detect; tight crop off by
+default). The learned U-Net seg adds ~0.4 s over the 2.6 s base; optional CRAFT
+tight crop adds ~0.7 s more (3.35 s all-on). For 750k: ~29 days single-worker,
+**~1.8 days on 16 GPU workers**, ~0.9 days on 32. `tools/benchmark.py`.
 
 > Was 15 s/image until a pathological `_drop_specks` loop (O(components×pixels) on
 > speckled scans) was vectorized — a 6× speedup. Re-benchmark on the target EC2

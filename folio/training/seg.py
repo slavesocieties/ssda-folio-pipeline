@@ -37,8 +37,8 @@ def _pairs(images_dir, masks_dir):
 
 
 class SegDS(Dataset):
-    def __init__(self, pairs, size, train):
-        self.pairs, self.size, self.train = pairs, size, train
+    def __init__(self, pairs, size, train, invert=False):
+        self.pairs, self.size, self.train, self.invert = pairs, size, train, invert
 
     def __len__(self):
         return len(self.pairs)
@@ -66,6 +66,8 @@ class SegDS(Dataset):
     def __getitem__(self, i):
         ip, mp = self.pairs[i]
         im = cv2.imread(ip); mk = cv2.imread(mp, 0)
+        if self.invert:           # entry masks are black=foreground on white bg
+            mk = 255 - mk
         if im.shape[:2] != (self.size, self.size):
             im = cv2.resize(im, (self.size, self.size))
         if mk.shape[:2] != (self.size, self.size):
@@ -93,6 +95,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=60); ap.add_argument("--bs", type=int, default=8)
     ap.add_argument("--size", type=int, default=512); ap.add_argument("--val-frac", type=float, default=0.15)
     ap.add_argument("--lr", type=float, default=3e-4); ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--invert", action="store_true", help="mask foreground is BLACK (entry masks)")
     args = ap.parse_args()
 
     random.seed(args.seed); torch.manual_seed(args.seed)
@@ -106,8 +109,8 @@ def main():
     import segmentation_models_pytorch as smp
     model = smp.Unet(encoder_name=args.encoder, encoder_weights="imagenet",
                      in_channels=3, classes=1).to(dev)
-    tl = DataLoader(SegDS(train, args.size, True), batch_size=args.bs, shuffle=True, num_workers=0)
-    vl = DataLoader(SegDS(val, args.size, False), batch_size=args.bs, shuffle=False, num_workers=0)
+    tl = DataLoader(SegDS(train, args.size, True, args.invert), batch_size=args.bs, shuffle=True, num_workers=0)
+    vl = DataLoader(SegDS(val, args.size, False, args.invert), batch_size=args.bs, shuffle=False, num_workers=0)
 
     dice = smp.losses.DiceLoss(mode="binary"); bce = nn.BCEWithLogitsLoss()
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
