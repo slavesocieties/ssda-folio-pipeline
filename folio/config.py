@@ -70,6 +70,10 @@ class GeometryConfig:
     # using the precise learned page mask, leaving only the folio. Needs the
     # learned segmenter; no-op without it.
     mask_background: bool = True
+    # cap the output aspect ratio (long:short) so no crop is more extreme than the
+    # transcription backend accepts (SSDA HTR/Gemini wants <= 10:24, i.e. 24/10).
+    # Padded with white, never cropped, so no content is lost. 0 disables.
+    max_output_ratio: float = 2.4
     # Stage 4 gutter search
     gutter_band_margin_frac: float = 0.04   # widen inter-page gap by this much
     seam_smoothness: float = 0.3            # DP diagonal penalty weight

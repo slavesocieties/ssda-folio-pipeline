@@ -89,6 +89,19 @@ applied rotation/skew, orientation confidence, text fraction, **`is_blank`**
 (content vs blank/non-content page — so Archivault can skip blanks), and whether
 it was flagged `needs_review` (and why).
 
+### Sidecar provenance (for matching transcription back to the original)
+Each folio in the sidecar JSON carries:
+- **`source_size`** `[width, height]` — the original source image's pixel size.
+- **`crop_quad_norm`** — the folio's 4 corners `[TL, TR, BR, BL]` as `(x, y)`
+  ratios in `[0,1]` of the **original** image. So given the source image you can
+  locate exactly where each output folio (and thus its transcription) came from —
+  including which side of a two-folio spread.
+
+Output images are capped at the HTR backend's **10:24** aspect (long:short ≤ 2.4),
+padded with white (never cropped) — `geom.max_output_ratio`. Combined with the
+learned-seg background white-out, each crop is the full folio on white, upright,
+within the transcription model's accepted ratio.
+
 ## What it does internally (recommended hybrid config)
 1. **Coarse orientation pre-pass** — uprights sideways/landscape scans before
    anything else, so segmentation never sees a rotated page.

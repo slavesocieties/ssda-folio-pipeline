@@ -56,6 +56,7 @@ class FolioPipeline:
         if image is None or image.size == 0:
             res.error = "decode_failed"
             return res
+        orig_h, orig_w = image.shape[:2]   # ORIGINAL size, before any pre-pass rotation
         try:
             # Stage 0b: coarse orientation pre-pass. Only acts on sideways
             # (landscape, k in {1,3}) scans, which the upright-trained segmenter
@@ -139,6 +140,15 @@ class FolioPipeline:
                 folio = self._finish_page(image, mask, label, margin_frac=mfrac,
                                           white_mask=wmask)
                 if folio is not None:
+                    # provenance: map the crop quad (in the possibly pre-rotated
+                    # working frame) back to the ORIGINAL image, as [0,1] ratios.
+                    if folio.crop_quad_norm is not None:
+                        q = _unrotate_quad(folio.crop_quad_norm, res.pre_rotation_k,
+                                           orig_w, orig_h)
+                        folio.crop_quad_norm = [
+                            [round(min(1.0, max(0.0, x / orig_w)), 5),
+                             round(min(1.0, max(0.0, y / orig_h)), 5)] for x, y in q]
+                    folio.source_size = [int(orig_w), int(orig_h)]
                     res.folios.append(folio)
 
             if not res.folios:
@@ -344,9 +354,16 @@ class FolioPipeline:
             if tb is not None and (tb[2] - tb[0]) >= 16 and (tb[3] - tb[1]) >= 16:
                 final = final[tb[1]:tb[3], tb[0]:tb[2]]
 
+        # Cap the output aspect (long:short) for the transcription backend
+        # (<= 10:24); pad with white, never crop, so nothing is lost.
+        final = _fit_max_aspect(final, getattr(g, "max_output_ratio", 0.0))
+
         folio = FolioResult(label=label, crop=final,
                             rotation_deg=(90.0 * ((-k) % 4) + skew),
                             orientation_conf=oconf)
+        # provenance: the crop quad in the (working) frame; process_image maps it
+        # back to ORIGINAL-image [0,1] ratios. quad order is TL, TR, BR, BL.
+        folio.crop_quad_norm = quad.tolist()
         # Stage 5c: content vs blank/non-content (so Archivault can skip blanks)
         if self.blank_classifier is not None:
             folio.is_blank, folio.blank_conf = self.blank_classifier.predict(final)
@@ -447,6 +464,42 @@ def _halve_box(b: PageBox) -> List[PageBox]:
     ov = int(0.04 * (b.x2 - b.x1))         # small overlap so the seam can wander
     return [PageBox(b.x1, b.y1, min(mid + ov, b.x2), b.y2, b.score),
             PageBox(max(mid - ov, b.x1), b.y1, b.x2, b.y2, b.score)]
+
+
+def _fit_max_aspect(img: np.ndarray, max_ratio: float, fill: int = 255) -> np.ndarray:
+    """Pad (with white) so the long:short side ratio never exceeds ``max_ratio``
+    (e.g. 24/10 for the HTR backend's 10:24 limit). Padding only — never crops."""
+    if not max_ratio or max_ratio <= 0:
+        return img
+    import cv2
+    h, w = img.shape[:2]
+    long_, short = max(h, w), min(h, w)
+    if long_ <= max_ratio * short:
+        return img
+    target = int(np.ceil(long_ / max_ratio))
+    pad = target - short
+    a, b = pad // 2, pad - pad // 2
+    if h >= w:                                   # tall -> pad width
+        return cv2.copyMakeBorder(img, 0, 0, a, b, cv2.BORDER_CONSTANT, value=(fill, fill, fill))
+    return cv2.copyMakeBorder(img, a, b, 0, 0, cv2.BORDER_CONSTANT, value=(fill, fill, fill))
+
+
+def _unrotate_quad(quad, k: int, orig_w: int, orig_h: int):
+    """Map quad points from a working image that was ``np.rot90(orig, k)`` back to
+    the ORIGINAL image's pixel coordinates."""
+    k = int(k) % 4
+    out = []
+    for x, y in quad:
+        if k == 0:
+            ox, oy = x, y
+        elif k == 1:
+            ox, oy = orig_w - 1 - y, x
+        elif k == 2:
+            ox, oy = orig_w - 1 - x, orig_h - 1 - y
+        else:
+            ox, oy = y, orig_h - 1 - x
+        out.append((ox, oy))
+    return out
 
 
 def _stem(key: str) -> str:

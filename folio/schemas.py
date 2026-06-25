@@ -48,6 +48,11 @@ class FolioResult:
     blank_conf: float = 0.0
     needs_review: bool = False
     review_reasons: List[str] = field(default_factory=list)
+    # ---- provenance: where this folio sits in the ORIGINAL source image, so a
+    # transcription can be matched back to its location later ----
+    source_size: Optional[List[int]] = None        # original image [width, height] px
+    crop_quad_norm: Optional[List[List[float]]] = None  # folio region corners
+    #   [TL, TR, BR, BL] as (x, y) ratios in [0,1] of the original image
 
     def meta(self) -> dict:
         d = asdict(self)
