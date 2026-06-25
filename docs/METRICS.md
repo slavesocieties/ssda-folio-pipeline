@@ -64,6 +64,25 @@ The adaptive-threshold deskew returns the **same angle as an exhaustive search**
 and recovers known tilts within the unit-test tolerance. Earlier (global-Otsu)
 objective railed to ±15° on ~39% of page crops; the current objective: **0%**.
 
+## Learned folio segmentation (page boundary)
+
+Trained a U-Net (ImageNet-pretrained encoder, `segmentation_models_pytorch`) on
+Daniel's **151 folio-level mask pairs** to predict the page region directly —
+the background-agnostic boundary the classical paper detector can't get on
+light-on-light scans. Strong colour/illumination augmentation to generalise
+across dark/light backgrounds.
+
+| | |
+|---|---|
+| **Val IoU** | **0.9604** (22-image held-out split) |
+| Train / val | 129 / 22 of 151 pairs, 512×512 |
+| Use | when present, its mask drives the crop (precise full folio); seam split still divides spreads. Falls back to the classical/legacy mask if absent |
+
+Verified: the torn light-background document (`113754`) that classical failed on
+(empty paper mask) now crops tight to the full folio; dark-bg spreads still split
+cleanly. Train: `python -m folio.training.seg --images <dir> --masks <dir>`.
+Reproduces from `preprocessed/{images,masks}` (Daniel's mask set).
+
 ## Cropping tightness (vs the supervisor's ground-truth text rects)
 
 Crop quality is measured as the **meaningful-pixel ratio** (ground-truth text area

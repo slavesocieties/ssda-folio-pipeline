@@ -28,7 +28,10 @@ derivatives, (2) make every folio upright, (3) crop tightly to the folio.
 | Orientation (upright) | ✅ | 98.8% (upright 100 / upside-down 97.5 / landscape 100) |
 | Deskew | ✅ | matches exhaustive search exactly, no railing |
 | Cropping (page) | ✅ | 0/25 clipped (full page width captured) |
-| **Tight crop (text region)** | ✅ | learned CRAFT crop; meaningful-pixel ~0.5–0.6 (vs 0.30 loose), coverage 1.00 (never clips); 56/56 portrait on broad sample. `--no-tight-crop` to disable |
+| **Learned folio segmentation** | ✅ | U-Net page-boundary, **val IoU 0.96** (Daniel's 151 masks); precise full-folio crops on ANY background (fixes light-on-light); on by default, falls back to classical mask if smp/weight absent |
+| **Full-folio crop (default)** | ✅ | tight to the page, never over-crops; square sparse-page crops 5→0 on Daniel's sample |
+| Tight crop (text region) | ✅ opt-in | learned CRAFT crop via `--tight-crop`; meaningful ~0.5–0.6, coverage 1.00 |
+| **Per-volume consistency** | ✅ | `tools/volume_normalize.py` → identical size per volume (pad-only); flags size-outliers |
 | **Faint-ink enhance** | ✅ | `--enhance` writes a CLAHE `*_enhanced.jpg` for faint pages |
 | **Throughput** | ✅ | ~2.6 s/image (RTX 5080, all on); 16 GPU workers ≈ 1.4 days for 750k |
 | Tests | ✅ | 51 passing, CPU-only |
