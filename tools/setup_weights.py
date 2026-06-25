@@ -23,7 +23,8 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TRAINED = ["orientation4_convnextv2.pt", "folio_count_convnextv2.pt", "blank_convnextv2.pt"]
+TRAINED = ["orientation4_convnextv2.pt", "folio_count_convnextv2.pt", "blank_convnextv2.pt",
+           "folio_seg_unet.pt.ts.pt"]
 
 
 def _gdown(file_id: str, dest: Path):

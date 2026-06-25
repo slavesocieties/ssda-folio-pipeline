@@ -41,6 +41,7 @@ class ModelConfig:
     folio_count_weights: str = "weights/folio_count_convnextv2.pt"
     orientation_weights: str = "weights/orientation4_convnextv2.pt"
     blank_weights: str = "weights/blank_convnextv2.pt"   # content/blank classifier
+    folio_seg_weights: str = "weights/folio_seg_unet.pt.ts.pt"  # learned page segmenter (TorchScript)
     dewarp_weights: str = "weights/uvdoc.pt"
     # inference image sizes (geometry is always applied at full res)
     detector_size: int = 1024

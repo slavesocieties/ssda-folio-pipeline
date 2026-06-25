@@ -111,11 +111,19 @@ def build_pipeline(cfg: PipelineConfig, legacy_weights: Optional[str],
 
 
 def _attach_blank(pipe, cfg, mode: str) -> str:
-    """Attach the content/blank classifier if its weight is present."""
+    """Attach the content/blank classifier + learned folio segmenter if present."""
     if Path(cfg.model.blank_weights).exists():
         from .models.classifiers import BlankClassifier
         pipe.blank_classifier = BlankClassifier(cfg.model)
         mode += " + blank-detect"
+    if Path(cfg.model.folio_seg_weights).exists():
+        try:
+            from .models.folio_seg import FolioSegmenter
+            pipe.folio_segmenter = FolioSegmenter(cfg.model.folio_seg_weights,
+                                                  device=cfg.model.device)
+            mode += " + learned-seg"
+        except Exception:
+            pass
     return mode
 
 
@@ -131,6 +139,8 @@ def make_config(device: Optional[str] = None,
         resolve_orient_weight(cfg)
     if not Path(cfg.model.blank_weights).is_absolute():
         cfg.model.blank_weights = str(_REPO / cfg.model.blank_weights)
+    if not Path(cfg.model.folio_seg_weights).is_absolute():
+        cfg.model.folio_seg_weights = str(_REPO / cfg.model.folio_seg_weights)
     return cfg
 
 

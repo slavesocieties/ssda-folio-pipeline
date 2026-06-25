@@ -19,13 +19,17 @@ from .stages import spine, geometry, orient
 class FolioPipeline:
     def __init__(self, cfg: PipelineConfig, segmenter=None, counter=None,
                  orienter=None, dewarper=None, coarse_orienter=None,
-                 blank_classifier=None):
+                 blank_classifier=None, folio_segmenter=None):
         self.cfg = cfg
         # injected so tests can pass stubs; built lazily for production runs
         self.segmenter = segmenter
         self.counter = counter
         self.orienter = orienter
         self.dewarper = dewarper
+        # optional LEARNED folio/page segmenter (U-Net). When set, its precise
+        # page mask drives the crop (background-agnostic, works on light-on-light
+        # scans the classical detector can't), replacing the legacy crop mask.
+        self.folio_segmenter = folio_segmenter
         # optional content/blank classifier; when set, each folio is tagged
         # is_blank in the sidecar so Archivault can skip non-content pages.
         self.blank_classifier = blank_classifier
@@ -84,6 +88,14 @@ class FolioPipeline:
                 h, w = image.shape[:2]
                 boxes = _halve_box(PageBox(0, 0, w, h, boxes[0].score))
             masks = self.segmenter.segment(image, boxes)
+
+            # Learned folio segmenter (precise, background-agnostic page boundary)
+            # supersedes the legacy crop mask. It returns the whole paper region
+            # (both pages on a spread); the seam split below divides it per folio.
+            if self.folio_segmenter is not None:
+                lp = self.folio_segmenter.page_mask(image)
+                if lp.any() and float(lp.mean()) > 0.05:
+                    masks = [lp for _ in masks]
 
             # Stage 2 global skew estimate (from union mask) -> recorded only;
             # fine skew is applied per-folio in Stage 5 for accuracy.

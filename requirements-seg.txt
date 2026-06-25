@@ -1,0 +1,7 @@
+# Optional: learned folio (page) segmentation — precise, background-agnostic page
+# boundary (works on light-on-light scans the classical detector can't). On by
+# default when present; the pipeline falls back to the classical/legacy mask if
+# absent. Install WITHOUT touching the CUDA torch build:
+#     pip install --no-deps segmentation-models-pytorch
+# (timm + torch are already required by the base install.)
+segmentation-models-pytorch>=0.5
