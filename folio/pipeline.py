@@ -316,6 +316,11 @@ class FolioPipeline:
                 (true_mask > 0).astype(np.uint8) * 255, crop_H, cw, ch,
                 quarter_k=(-k) % 4, skew_deg=skew,
                 interp=cv2.INTER_NEAREST, border=cv2.BORDER_CONSTANT, border_value=0)
+            # Fill interior holes: a faded/bleached patch inside the sheet can be
+            # read as non-page and would be whited out, punching a hole through the
+            # folio (and any faint text in it). The folio is one solid region, so any
+            # background fully enclosed by it is a mask error -> fill it back in.
+            fm = _fill_mask_holes(fm)
             grow = max(3, int(0.004 * min(final.shape[:2])) | 1)
             fm = cv2.dilate(fm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
             final[fm < 127] = 255
@@ -464,6 +469,21 @@ def _halve_box(b: PageBox) -> List[PageBox]:
     ov = int(0.04 * (b.x2 - b.x1))         # small overlap so the seam can wander
     return [PageBox(b.x1, b.y1, min(mid + ov, b.x2), b.y2, b.score),
             PageBox(max(mid - ov, b.x1), b.y1, b.x2, b.y2, b.score)]
+
+
+def _fill_mask_holes(fm: np.ndarray) -> np.ndarray:
+    """Fill interior holes in a binary (0/255) page mask. Background fully enclosed
+    by the page is a segmentation error (a bleached/faded patch read as non-page);
+    flood-fill the exterior from the border and treat whatever it can't reach as
+    page, so the white-out never punches a hole through the folio."""
+    import cv2
+    pad = cv2.copyMakeBorder(fm, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    ff = pad.copy()
+    m = np.zeros((ff.shape[0] + 2, ff.shape[1] + 2), np.uint8)
+    cv2.floodFill(ff, m, (0, 0), 255)            # exterior background -> 255
+    holes = cv2.bitwise_not(ff)                  # only interior holes remain set
+    out = cv2.bitwise_or(pad, holes)
+    return out[1:-1, 1:-1]
 
 
 def _fit_max_aspect(img: np.ndarray, max_ratio: float, fill: int = 255) -> np.ndarray:
