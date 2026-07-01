@@ -476,7 +476,9 @@ def _safe_page_mask(fm: np.ndarray) -> np.ndarray:
     segmenter under-covers the page (open bays reaching the margin) and the raw mask
     would white-out real text; the hull bridges those gaps. Slight over-extension at
     torn corners (keeps a little background) is acceptable — never losing text is not."""
-    import cv2
+    import cv2, os
+    if os.environ.get("FOLIO_KEEP_ALL"):          # QA ground truth: keep every pixel,
+        return np.full_like(fm, 255)              # same geometry as safe, zero erasure
     fm = _fill_mask_holes(fm)
     num, lab, stats, _ = cv2.connectedComponentsWithStats((fm > 0).astype(np.uint8), 8)
     if num < 2:
@@ -493,7 +495,9 @@ def _safe_page_mask(fm: np.ndarray) -> np.ndarray:
     hull = cv2.convexHull(pts)
     out = np.zeros_like(fm)
     cv2.fillConvexPoly(out, hull, 255)
-    return out
+    # union the hull with the full page mask so NO detected page fragment (incl. small
+    # components the hull-of-substantial-parts would drop) is ever erased -> safe >= raw mask
+    return cv2.bitwise_or(out, fm)
 
 
 def _fill_mask_holes(fm: np.ndarray) -> np.ndarray:
