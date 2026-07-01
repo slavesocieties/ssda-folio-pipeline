@@ -316,11 +316,10 @@ class FolioPipeline:
                 (true_mask > 0).astype(np.uint8) * 255, crop_H, cw, ch,
                 quarter_k=(-k) % 4, skew_deg=skew,
                 interp=cv2.INTER_NEAREST, border=cv2.BORDER_CONSTANT, border_value=0)
-            # Fill interior holes: a faded/bleached patch inside the sheet can be
-            # read as non-page and would be whited out, punching a hole through the
-            # folio (and any faint text in it). The folio is one solid region, so any
-            # background fully enclosed by it is a mask error -> fill it back in.
-            fm = _fill_mask_holes(fm)
+            # Never erase page interior: fill enclosed holes AND concavities (convex
+            # hull of the page region). Faded parchment under-segments into open bays
+            # that reach the margin; the raw mask would white-out real text there.
+            fm = _safe_page_mask(fm)
             grow = max(3, int(0.004 * min(final.shape[:2])) | 1)
             fm = cv2.dilate(fm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
             final[fm < 127] = 255
@@ -469,6 +468,32 @@ def _halve_box(b: PageBox) -> List[PageBox]:
     ov = int(0.04 * (b.x2 - b.x1))         # small overlap so the seam can wander
     return [PageBox(b.x1, b.y1, min(mid + ov, b.x2), b.y2, b.score),
             PageBox(max(mid - ov, b.x1), b.y1, b.x2, b.y2, b.score)]
+
+
+def _safe_page_mask(fm: np.ndarray) -> np.ndarray:
+    """Make a white-out mask that can NEVER erase page interior: fill enclosed holes,
+    then take the convex hull of the substantial page region(s). On faded parchment the
+    segmenter under-covers the page (open bays reaching the margin) and the raw mask
+    would white-out real text; the hull bridges those gaps. Slight over-extension at
+    torn corners (keeps a little background) is acceptable — never losing text is not."""
+    import cv2
+    fm = _fill_mask_holes(fm)
+    num, lab, stats, _ = cv2.connectedComponentsWithStats((fm > 0).astype(np.uint8), 8)
+    if num < 2:
+        return fm
+    big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    thr = 0.12 * stats[big, cv2.CC_STAT_AREA]              # keep components >=12% of largest
+    keep = np.zeros_like(fm)
+    for i in range(1, num):
+        if stats[i, cv2.CC_STAT_AREA] >= thr:
+            keep[lab == i] = 255
+    pts = cv2.findNonZero(keep)
+    if pts is None or len(pts) < 3:
+        return fm
+    hull = cv2.convexHull(pts)
+    out = np.zeros_like(fm)
+    cv2.fillConvexPoly(out, hull, 255)
+    return out
 
 
 def _fill_mask_holes(fm: np.ndarray) -> np.ndarray:
