@@ -37,8 +37,8 @@ def _pairs(images_dir, masks_dir):
 
 
 class SegDS(Dataset):
-    def __init__(self, pairs, size, train, invert=False):
-        self.pairs, self.size, self.train, self.invert = pairs, size, train, invert
+    def __init__(self, pairs, size, train, invert=False, fade_prob=0.0):
+        self.pairs, self.size, self.train, self.invert, self.fade_prob = pairs, size, train, invert, fade_prob
 
     def __len__(self):
         return len(self.pairs)
@@ -61,6 +61,17 @@ class SegDS(Dataset):
             hsv[..., 0] = (hsv[..., 0] + random.randint(-12, 12)) % 180
             hsv[..., 1] = np.clip(hsv[..., 1] + random.randint(-30, 30), 0, 255)
             im = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+        # FADE: bleach the parchment toward white (simulate faded/low-contrast pages
+        # where the segmenter under-covers the sheet). Mask-aware — fade just the page
+        # (faint page vs background) or the whole scan (over-exposed).
+        if self.fade_prob > 0 and random.random() < self.fade_prob:
+            f = random.uniform(0.30, 0.75)
+            faded = np.clip(im.astype(np.float32) * f + 255.0 * (1 - f), 0, 255).astype(np.uint8)
+            if random.random() < 0.5:
+                m = mk > 127
+                im = im.copy(); im[m] = faded[m]
+            else:
+                im = faded
         return np.ascontiguousarray(im), np.ascontiguousarray(mk)
 
     def __getitem__(self, i):
@@ -96,6 +107,8 @@ def main():
     ap.add_argument("--size", type=int, default=512); ap.add_argument("--val-frac", type=float, default=0.15)
     ap.add_argument("--lr", type=float, default=3e-4); ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--invert", action="store_true", help="mask foreground is BLACK (entry masks)")
+    ap.add_argument("--fade", action="store_true", help="add faded/low-contrast page augmentation")
+    ap.add_argument("--fade-prob", type=float, default=0.6, help="per-sample probability of fade aug")
     args = ap.parse_args()
 
     random.seed(args.seed); torch.manual_seed(args.seed)
@@ -109,7 +122,7 @@ def main():
     import segmentation_models_pytorch as smp
     model = smp.Unet(encoder_name=args.encoder, encoder_weights="imagenet",
                      in_channels=3, classes=1).to(dev)
-    tl = DataLoader(SegDS(train, args.size, True, args.invert), batch_size=args.bs, shuffle=True, num_workers=0)
+    tl = DataLoader(SegDS(train, args.size, True, args.invert, fade_prob=(args.fade_prob if args.fade else 0.0)), batch_size=args.bs, shuffle=True, num_workers=0)
     vl = DataLoader(SegDS(val, args.size, False, args.invert), batch_size=args.bs, shuffle=False, num_workers=0)
 
     dice = smp.losses.DiceLoss(mode="binary"); bce = nn.BCEWithLogitsLoss()
