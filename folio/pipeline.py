@@ -326,7 +326,7 @@ class FolioPipeline:
             # hull of the page region). Faded parchment under-segments into open bays
             # that reach the margin; the raw mask would white-out real text there.
             fm = _safe_page_mask(fm)
-            grow = max(3, int(0.004 * min(final.shape[:2])) | 1)
+            grow = max(3, int(0.02 * min(final.shape[:2])) | 1)
             fm = cv2.dilate(fm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
             final[fm < 127] = 255
             masked_out = True
