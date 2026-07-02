@@ -134,6 +134,11 @@ def make_config(device: Optional[str] = None,
     cfg.model.device = device or auto_device()
     cfg.geom.tight_crop = tight_crop
     cfg.geom.mask_background = mask_background
+    # tight no-white-out: crop to the folio-half mask bbox (excludes the facing
+    # page) instead of the brightness trim. Env-toggled so it flows to --jobs
+    # workers without threading a new arg through the pool. Only bites when the
+    # white-out is off (the pipeline guards on `not masked_out`).
+    cfg.geom.crop_to_folio_mask = bool(os.environ.get("FOLIO_CROP_TO_MASK"))
     if orient_weights:
         cfg.model.orientation_weights = str(Path(orient_weights))
     else:

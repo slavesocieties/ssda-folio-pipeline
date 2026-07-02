@@ -331,6 +331,31 @@ class FolioPipeline:
             final[fm < 127] = 255
             masked_out = True
 
+        # Tight, no-white-out: crop to the bounding box of the same SAFE folio-half
+        # mask the white-out would use, instead of blanking. Excludes the facing
+        # page / binding (outside the folio half) but keeps every folio pixel the
+        # white-out keeps -- no pixel is altered, only the rectangle is tightened.
+        # This is Daniel's "smallest safe rectangle" without the facing-page sliver.
+        if not masked_out and getattr(g, "crop_to_folio_mask", False) and \
+                self.folio_segmenter is not None:
+            fm = geometry.compose_and_warp(
+                (true_mask > 0).astype(np.uint8) * 255, crop_H, cw, ch,
+                quarter_k=(-k) % 4, skew_deg=skew,
+                interp=cv2.INTER_NEAREST, border=cv2.BORDER_CONSTANT, border_value=0)
+            fm = _safe_page_mask(fm)                       # never lose page interior
+            # Small margin only: this is a crop (not a white-out), and the folio-half
+            # mask's gutter edge already sits at the seam, so a tight bbox excludes
+            # the facing page. Just enough margin to spare a faintly-segmented edge.
+            grow = max(3, int(0.008 * min(final.shape[:2])) | 1)
+            fm = cv2.dilate(fm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
+            ys, xs = np.where(fm >= 127)
+            if xs.size and ys.size:
+                x0, x1 = int(xs.min()), int(xs.max()) + 1
+                y0, y1 = int(ys.min()), int(ys.max()) + 1
+                if (x1 - x0) >= 16 and (y1 - y0) >= 16:
+                    final = final[y0:y1, x0:x1]
+            masked_out = True                              # skip the brightness trim
+
         # Background tightening (skipped when we white-out — the mask is
         # authoritative): drop dark non-information the page mask let through.
         if not masked_out and getattr(g, "trim_background", True):

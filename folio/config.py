@@ -74,6 +74,14 @@ class GeometryConfig:
     # using the precise learned page mask, leaving only the folio. Needs the
     # learned segmenter; no-op without it.
     mask_background: bool = True
+    # "tight no-white-out": instead of blanking the background, CROP the finished
+    # crop to the bounding box of the same safe learned folio-half mask that the
+    # white-out uses (hull-union-full-mask + margin). Excludes the facing page /
+    # binding (they are outside the folio half) while keeping every folio pixel the
+    # white-out keeps -- no pixel is altered, only the rectangle is tightened. Needs
+    # the learned segmenter. Ignored when mask_background is on. Supersedes the
+    # brightness trim_background when set.
+    crop_to_folio_mask: bool = False
     # cap the output aspect ratio (long:short) so no crop is more extreme than the
     # transcription backend accepts (SSDA HTR/Gemini wants <= 10:24, i.e. 24/10).
     # Padded with white, never cropped, so no content is lost. 0 disables.
