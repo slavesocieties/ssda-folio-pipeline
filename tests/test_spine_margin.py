@@ -1,5 +1,7 @@
-"""Two-folio asymmetric margin: outer edges get breathing room, the spine edge
-stays clamped at the seam (no facing-page sliver)."""
+"""Two-folio asymmetric margin: outer edges get full breathing room; the spine
+edge stays within a SMALL safety margin of the seam (gutter_safety_frac) so an
+imprecise spine split can't clip the folio's own inner text, without pulling in
+the whole facing page."""
 from types import SimpleNamespace
 import numpy as np
 
@@ -21,9 +23,10 @@ def test_spine_edge_clamped_at_seam():
     sel[:, :101] = 1                    # this page is the LEFT side, seam at col 100
     out = _run(mask, sel)
     cols = np.where(out.any(axis=0))[0]
-    # spine (right) edge never crosses the seam
-    assert cols.max() <= 100
-    # outer (left) edge got the margin (dilated past the original col 10)
+    # spine (right) edge stays near the seam: a small safety margin past it (so an
+    # imprecise split won't clip inner text), far less than the full crop margin
+    assert 100 <= cols.max() <= 108
+    # outer (left) edge got the (larger) crop margin
     assert cols.min() < 10
     # vertical edges got the margin too
     rows = np.where(out.any(axis=1))[0]
@@ -38,7 +41,7 @@ def test_right_page_spine_on_left():
     sel[:, 100:] = 1                    # this page is the RIGHT side, seam at col 100
     out = _run(mask, sel)
     cols = np.where(out.any(axis=0))[0]
-    assert cols.min() >= 100            # spine (left) edge stays at the seam
+    assert 92 <= cols.min() <= 100      # spine (left) edge: small safety margin past seam
     assert cols.max() > 210            # outer (right) edge dilated
 
 

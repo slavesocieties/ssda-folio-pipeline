@@ -262,6 +262,12 @@ class FolioPipeline:
         diag = float(np.hypot(int(ys.max()) - int(ys.min()), int(xs.max()) - int(xs.min())))
         k = max(1, int(self.cfg.geom.crop_margin_frac * diag))
         d = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+        # Relax the seam-side clip by a small safety margin so an imprecise spine
+        # split can never clip the folio's own inner (gutter-side) text. Any thin
+        # sliver past the gutter this admits is removed later by the background
+        # white-out / convex hull, so losing text is traded away for keeping it.
+        gk = max(1, int(getattr(self.cfg.geom, "gutter_safety_frac", 0.02) * diag))
+        sel = cv2.dilate(sel.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * gk + 1, 2 * gk + 1)))
         return (d.astype(bool) & sel.astype(bool)).astype(np.uint8)
 
     def _finish_page(self, image: np.ndarray, mask: np.ndarray,

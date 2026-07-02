@@ -53,6 +53,10 @@ class GeometryConfig:
     # outward crop margin so frayed edges / marginalia are never clipped,
     # expressed as a fraction of the page diagonal (Stage 3 boundary math).
     crop_margin_frac: float = 0.045
+    # safety margin (fraction of page diagonal) the two-folio split is allowed to
+    # extend PAST the gutter seam, so an imprecise spine split never clips the
+    # folio's own inner text. A thin sliver past the gutter is removed by white-out.
+    gutter_safety_frac: float = 0.02
     # trim leftover black warp-padding / uniform background border from the
     # finished crop (ink-guarded, never clips content). Safety net for loose masks.
     trim_background: bool = True
