@@ -21,6 +21,35 @@ Weights are auto-discovered; device auto-selects CUDA then CPU; with no weights
 it falls back to a dependency-free classical mode so it always produces output.
 See **[README_TOOL.md](README_TOOL.md)** for the full tool/GUI/S3 guide.
 
+## Background handling: tight crop (default) vs. white-out
+
+The crop is the first stage of the pipeline — anything it removes is text that is
+permanently lost from the (paid) downstream transcription, so the default is the
+**safe** option:
+
+- **Approach B — tight bounding-box crop (DEFAULT).** Crops each folio to the
+  bounding box of the learned page-half mask, keeping the natural background.
+  It **never alters a pixel — only the rectangle is tightened** — so it *cannot*
+  erase text, and it still drops the facing page/binding (they fall outside the
+  folio half). Verified **0 px of folio text lost** across the full evaluation set
+  (`tools/verify_B_noclip.py`, `tools/gt_interior_verify.py`).
+- **Approach A — white-out** (`--white-out`). Blanks every non-folio pixel to
+  white using the mask, giving a clean white background. Nicer-looking input, but
+  the white-out *erases* pixels it judges non-page, so on hard pages (ink
+  bleed-through, water damage, faded parchment) it can over-crop and eat real
+  content. Use only when you trust the segmenter on your corpus.
+
+```bash
+folio scan.jpg                 # approach B (default) — tight, no white-out
+folio scan.jpg --crop-to-mask  # approach B, explicit
+folio scan.jpg --white-out     # approach A — white background
+```
+
+Both derive from the identical split/upright/deskew geometry; they differ only in
+how the background is handled. B was adopted as the default after A was found to
+over-crop difficult pages (see [ARCHITECTURE.md](ARCHITECTURE.md)). To take crops
+through the Archivault transcription API, see **[scripts/](scripts/)**.
+
 ## What it fixes (vs. the legacy scripts)
 
 | Legacy problem | This system |

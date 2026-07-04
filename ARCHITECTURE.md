@@ -122,6 +122,13 @@ For tightly bound volumes where pages curve toward the gutter, a planar crop sti
 
 Each output page is written to S3 as the upright, portrait, full-resolution crop, alongside a JSON sidecar recording: source key, page label, gutter seam, all rotation angles, every model's confidence, mask IoU/area ratio, and processing version. This powers QA sampling and an active-learning loop that routes low-confidence images to human review and back into fine-tuning sets.
 
+**Background handling — tight crop (default) vs. white-out.** The crop is stage 1 of a pipeline whose final stage is *paid* transcription, so anything the crop removes is text that is permanently lost and never billed for. Two modes share the identical split/upright/deskew geometry and differ only in the background:
+
+- **Approach B — tight bounding-box crop (`crop_to_folio_mask`, the DEFAULT).** The finished crop is reduced to the bounding box of the learned folio-half mask (its convex-hull-safe form, plus a small margin). It keeps the natural background but **alters no pixel** — only the rectangle is tightened — so it *cannot* erase folio text, while the facing page/binding fall outside the half-mask and are excluded. Verified at **0 px of folio-text loss** across the evaluation set (`tools/verify_B_noclip.py` locates each crop inside a pixel-aligned keep-everything reference and measures any folio ink outside it; `tools/gt_interior_verify.py` checks for interior white holes).
+- **Approach A — white-out (`mask_background`, `--white-out`).** Blanks every non-folio pixel to white using the mask. Cleaner input, but because it *erases* pixels judged non-page, on hard pages (ink bleed-through, water damage, faded parchment where the segmenter under-covers the sheet) it over-crops and eats real content.
+
+**Decision:** B is the default. A was trialled first and produced a clean background, but review of difficult volumes (heavy bleed-through / water damage) showed the white-out shaving genuine text; B removes that failure mode entirely at the cost of a slightly busier background for the transcriber, which downstream models tolerate well. Selectable per-run via `--white-out` / `--crop-to-mask`.
+
 ---
 
 ## 4. Recommended stack

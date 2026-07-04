@@ -70,18 +70,19 @@ class GeometryConfig:
     # toward a portrait shape so the full folio is kept -- only ever adds area,
     # never crops tighter (no info lost). 0 disables.
     max_crop_aspect: float = 0.80
-    # white-out every non-folio pixel (background, facing-page sliver, binding)
-    # using the precise learned page mask, leaving only the folio. Needs the
-    # learned segmenter; no-op without it.
-    mask_background: bool = True
-    # "tight no-white-out": instead of blanking the background, CROP the finished
-    # crop to the bounding box of the same safe learned folio-half mask that the
-    # white-out uses (hull-union-full-mask + margin). Excludes the facing page /
-    # binding (they are outside the folio half) while keeping every folio pixel the
-    # white-out keeps -- no pixel is altered, only the rectangle is tightened. Needs
-    # the learned segmenter. Ignored when mask_background is on. Supersedes the
-    # brightness trim_background when set.
-    crop_to_folio_mask: bool = False
+    # APPROACH A (white-out): blank every non-folio pixel (background, facing-page
+    # sliver, binding) to white using the precise learned page mask, leaving only the
+    # folio on white. OFF by default -- the white-out ERASES pixels it judges non-page,
+    # so on hard pages (ink bleed-through, water damage) it can over-crop and eat real
+    # content. Enable with --white-out. Needs the learned segmenter.
+    mask_background: bool = False
+    # APPROACH B (tight bounding-box crop) -- THE DEFAULT (supervisor-approved). Instead
+    # of blanking the background, CROP the finished crop to the bounding box of the same
+    # safe learned folio-half mask (hull-union-full-mask + margin). Excludes the facing
+    # page / binding (outside the folio half) while keeping every folio pixel -- NO pixel
+    # is ever altered, only the rectangle is tightened, so it cannot erase text (verified
+    # 0px folio-text loss). Needs the learned segmenter; ignored when mask_background is on.
+    crop_to_folio_mask: bool = True
     # cap the output aspect ratio (long:short) so no crop is more extreme than the
     # transcription backend accepts (SSDA HTR/Gemini wants <= 10:24, i.e. 24/10).
     # Padded with white, never cropped, so no content is lost. 0 disables.
