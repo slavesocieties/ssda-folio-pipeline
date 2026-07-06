@@ -50,6 +50,38 @@ how the background is handled. B was adopted as the default after A was found to
 over-crop difficult pages (see [ARCHITECTURE.md](ARCHITECTURE.md)). To take crops
 through the Archivault transcription API, see **[scripts/](scripts/)**.
 
+## Model weights
+
+The trained weights are **not in git** (too large) — they're published as assets on a
+GitHub Release. Fetch them into `weights/` with one command (standard library only):
+
+```bash
+python tools/fetch_weights.py        # downloads the 4 weights the crop path needs
+```
+
+Full setup from a clean clone:
+```bash
+git clone https://github.com/slavesocieties/ssda-folio-pipeline
+cd ssda-folio-pipeline
+pip install -e . --no-deps           # the `folio` command (protects a cu12x torch)
+pip install -r requirements.txt      # + segmentation-models-pytorch for the learned segmenter
+python tools/fetch_weights.py        # ~416 MB into weights/
+folio scan.jpg                       # runs approach B by default
+```
+
+The pipeline is **inference-only** — these weights are frozen and reused for every
+image/volume; nothing is retrained at run time. The four files:
+
+| File | Role | Metric |
+|---|---|---|
+| `folio_seg_unet.pt.ts.pt` | learned page segmenter (drives the crop) | val IoU 0.96 |
+| `orientation4_convnextv2.pt` | 4-way orientation | val 0.98 |
+| `folio_count_convnextv2.pt` | one/two/reject count | 100% held-out |
+| `blank_convnextv2.pt` | content vs. blank | val 0.99 |
+
+To retrain from scratch instead (needs labelled masks), see `folio/training/`.
+`FOLIO_WEIGHTS_BASE_URL` overrides the download location (e.g. a private mirror).
+
 ## What it fixes (vs. the legacy scripts)
 
 | Legacy problem | This system |
