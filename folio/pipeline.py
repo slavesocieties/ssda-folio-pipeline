@@ -19,7 +19,7 @@ from .stages import spine, geometry, orient
 class FolioPipeline:
     def __init__(self, cfg: PipelineConfig, segmenter=None, counter=None,
                  orienter=None, dewarper=None, coarse_orienter=None,
-                 blank_classifier=None, folio_segmenter=None):
+                 blank_classifier=None, folio_segmenter=None, ocr_verifier=None):
         self.cfg = cfg
         # injected so tests can pass stubs; built lazily for production runs
         self.segmenter = segmenter
@@ -38,6 +38,11 @@ class FolioPipeline:
         # rotated page. Must be a true 4-way classifier (not the legacy
         # aspect-ratio orient adapter, which flags any wide image as sideways).
         self.coarse_orienter = coarse_orienter
+        # optional OCR up/down verifier (folio.stages.ocr_orient). An INDEPENDENT
+        # text-legibility signal used only to rescue folios flagged
+        # low_orientation_conf: it can correct the head's 180-flip and clear the
+        # flag, but only above a calibrated margin. None -> feature off.
+        self.ocr_verifier = ocr_verifier
 
     # ------------------------------------------------------------------ build
     def _ensure_models(self):
@@ -427,6 +432,27 @@ class FolioPipeline:
         aspect = w / float(h)
         if not (q.portrait_aspect_range[0] <= aspect <= q.portrait_aspect_range[1]):
             reasons.append("unexpected_aspect")
+
+        # Stage 5d: OCR orientation review-rescue. The 4-way head is ~99% on the
+        # AXIS but only coin-flip on the 180 up-vs-down, and the legacy net shares
+        # that blind spot. An independent OCR legibility read resolves the flip:
+        # on a folio flagged low_orientation_conf ONLY (so cost stays on the small
+        # uncertain minority). CONFIRM (keep orientation, clear flag) is low-risk
+        # and cleared at the confirm gate; OVERRIDE (rotate 180) is high-risk and
+        # requires the stricter override gate; a weak margin is left flagged.
+        if self.ocr_verifier is not None and "low_orientation_conf" in reasons \
+                and self.ocr_verifier.available:
+            should_flip, margin = self.ocr_verifier.flip_verdict(folio.crop)
+            gate = q.ocr_override_margin if should_flip else q.ocr_confirm_margin
+            if margin >= gate:
+                folio.ocr_margin = float(margin)
+                if should_flip:
+                    folio.crop = np.ascontiguousarray(np.rot90(folio.crop, 2))
+                    folio.rotation_deg = (folio.rotation_deg + 180.0) % 360.0
+                    folio.ocr_flipped = True
+                folio.ocr_rescued = True
+                reasons.remove("low_orientation_conf")
+
         folio.needs_review = len(reasons) > 0
         folio.review_reasons = reasons
         return folio

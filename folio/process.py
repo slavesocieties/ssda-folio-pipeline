@@ -101,6 +101,9 @@ def build_pipeline(cfg: PipelineConfig, legacy_weights: Optional[str],
             if prepass:
                 pipe.coarse_orienter = head
                 mode += " + landscape pre-pass"
+            # OCR flip-rescue targets THIS trained head's low-confidence 180
+            # errors, so it's attached only here (never in the classical fallback).
+            mode = _attach_ocr_rescue(pipe, cfg, mode)
         return pipe, _attach_blank(pipe, cfg, mode)
 
     from .models.classical import (ClassicalSegmenter, ClassicalCounter,
@@ -124,6 +127,29 @@ def _attach_blank(pipe, cfg, mode: str) -> str:
             mode += " + learned-seg"
         except Exception:
             pass
+    return mode
+
+
+def _attach_ocr_rescue(pipe, cfg, mode: str) -> str:
+    """Attach the OCR orientation review-rescue if EasyOCR is importable.
+
+    Independent text-legibility second opinion that resolves the 4-way head's
+    180-flip on folios flagged low_orientation_conf (see stages.ocr_orient). No
+    dependency at import time; a graceful no-op when EasyOCR is absent so the
+    package and the default runs are unaffected.
+
+    Called only from the hybrid/trained-head branch of build_pipeline -- the
+    rescue targets that head's flip errors, so the classical fallback (no learned
+    head) and the unit tests (stub pipelines) never pull EasyOCR in."""
+    try:
+        import importlib.util
+        if importlib.util.find_spec("easyocr") is None:
+            return mode
+        from .stages.ocr_orient import OCRUpDownVerifier
+        pipe.ocr_verifier = OCRUpDownVerifier(cfg.model, device=cfg.model.device)
+        mode += " + ocr-orient-rescue"
+    except Exception:
+        pass
     return mode
 
 

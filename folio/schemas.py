@@ -48,6 +48,11 @@ class FolioResult:
     blank_conf: float = 0.0
     needs_review: bool = False
     review_reasons: List[str] = field(default_factory=list)
+    # ---- OCR orientation review-rescue (an independent text-legibility signal
+    # consulted ONLY on folios the 4-way head flagged low_orientation_conf) ----
+    ocr_rescued: bool = False        # OCR resolved the flip -> flag cleared
+    ocr_flipped: bool = False        # OCR's verdict rotated the crop 180 to upright
+    ocr_margin: float = 0.0          # OCR relative-confidence margin |a-b|/(a+b)
     # ---- provenance: where this folio sits in the ORIGINAL source image, so a
     # transcription can be matched back to its location later ----
     source_size: Optional[List[int]] = None        # original image [width, height] px

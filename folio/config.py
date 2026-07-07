@@ -110,6 +110,18 @@ class QualityConfig:
     # catch the known sparse-page failures; recall-oriented (a few correct sparse
     # pages are flagged too). Re-tune against a labelled validation set.
     min_text_frac_for_orient: float = 0.075
+    # OCR orientation review-rescue: on a folio flagged ``low_orientation_conf``,
+    # an independent OCR pass decides the up-vs-down flip. Two gates, because the
+    # two actions carry very different risk (measured on a held-out labelled set,
+    # folio.stages.ocr_orient):
+    #   CONFIRM  (OCR agrees with the head -> clear the flag, keep orientation):
+    #     low risk (the head's answer is kept), ~100% precise at margin >= 0.20.
+    #   OVERRIDE (OCR disagrees -> rotate the crop 180): high risk (a wrong flip
+    #     silently breaks a correct page), only ~100% precise at margin >= 0.30;
+    #     below that it introduces errors, so a stricter gate is required.
+    # A weak margin is treated as no signal and the folio stays flagged.
+    ocr_confirm_margin: float = 0.20
+    ocr_override_margin: float = 0.30
 
 
 @dataclass
