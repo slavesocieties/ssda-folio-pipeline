@@ -117,11 +117,16 @@ class QualityConfig:
     #   CONFIRM  (OCR agrees with the head -> clear the flag, keep orientation):
     #     low risk (the head's answer is kept), ~100% precise at margin >= 0.20.
     #   OVERRIDE (OCR disagrees -> rotate the crop 180): high risk (a wrong flip
-    #     silently breaks a correct page), only ~100% precise at margin >= 0.30;
-    #     below that it introduces errors, so a stricter gate is required.
+    #     silently breaks a correct page AND clears its review flag, so an undetected
+    #     upside-down page reaches paid transcription). 0.30 was held-out-validated
+    #     100%-precise on the design set (cleaner tight crops); on harder/faded real
+    #     corpora the flips cluster near that edge on pages OCR reads weakly, so the
+    #     shipped default is a slightly more conservative 0.35 -- it defers the
+    #     riskiest ~quartile of flips (0.30-0.35 band) to human review instead of
+    #     acting on them. Lower it toward 0.30 for higher coverage on legible corpora.
     # A weak margin is treated as no signal and the folio stays flagged.
     ocr_confirm_margin: float = 0.20
-    ocr_override_margin: float = 0.30
+    ocr_override_margin: float = 0.35
 
 
 @dataclass
