@@ -12,3 +12,9 @@ eval_out/
 out/
 *.log
 .DS_Store
+
+# PyInstaller packaging build artifacts
+packaging/build_venv/
+packaging/dist/
+packaging/build/
+packaging/*.spec

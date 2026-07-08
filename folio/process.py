@@ -175,6 +175,15 @@ def make_config(device: Optional[str] = None,
         cfg.model.blank_weights = str(_REPO / cfg.model.blank_weights)
     if not Path(cfg.model.folio_seg_weights).is_absolute():
         cfg.model.folio_seg_weights = str(_REPO / cfg.model.folio_seg_weights)
+    # External weights dir (e.g. next to a packaged .exe, or a shared mirror): if set,
+    # every model weight is resolved by filename inside it. Takes final precedence.
+    wdir = os.environ.get("FOLIO_WEIGHTS_DIR")
+    if wdir:
+        for attr in ("folio_seg_weights", "orientation_weights",
+                     "folio_count_weights", "blank_weights"):
+            cur = getattr(cfg.model, attr, None)
+            if cur:
+                setattr(cfg.model, attr, str(Path(wdir) / Path(cur).name))
     return cfg
 
 
