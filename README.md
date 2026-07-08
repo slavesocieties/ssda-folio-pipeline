@@ -22,8 +22,12 @@ The first run installs what's missing and downloads the models (~416 MB), then y
 browser opens the **Folio Processor**: drag in page scans, get cropped single-folio
 images back, and download them as a `.zip`.
 
-Prefer a terminal? `python run_app.py` does the same. GPU is optional and
-auto-detected; on a plain machine it runs on CPU (slower, but works).
+Prefer a terminal? `python run_app.py` does the same.
+
+**It uses your GPU automatically.** The launcher detects an NVIDIA GPU and installs a
+CUDA build of PyTorch (much faster for this workload); with no GPU it installs the CPU
+build. An existing torch is reused untouched, so it never downgrades a working setup.
+(50-series / Blackwell GPUs need `FOLIO_TORCH_INDEX=cu128 python run_app.py`.)
 
 ## Three ways to run it
 
