@@ -13,21 +13,30 @@ to pre-process a ~750,000-image corpus ahead of handwritten-text transcription.
 
 ## Run it as an app — no coding, no LLM
 
+Two ways, depending on whether you want zero setup or GPU speed.
+
+### Option A — download the app (no Python, easiest)
+
+1. Download **[FolioProcessor-win64.zip](../../releases/tag/app-v1)** (Windows).
+2. Unzip it and **double-click `FolioProcessor.exe`**.
+
+Your browser opens the **Folio Processor** — drag in page scans, get cropped
+single-folio images back, download them as a `.zip`. The first launch downloads the
+models (~416 MB) next to the app, then it works offline. Runs on **CPU**
+(self-contained; ideal for a few pages or a demo).
+
+### Option B — run from source (uses your GPU, recommended for bulk)
+
 1. Install **Python 3.10+** ([python.org](https://www.python.org/downloads/) — on
    Windows, tick *"Add Python to PATH"*).
-2. Get the code: **Code → Download ZIP** (then unzip), or `git clone` this repo.
-3. **Double-click `Run Folio App.bat`** (Windows) or `run_folio_app.command` (macOS).
+2. Download this repo (**Code → Download ZIP**, then unzip) or `git clone` it.
+3. **Double-click `Run Folio App.bat`** (Windows) / `run_folio_app.command` (macOS),
+   or run `python run_app.py`.
 
-The first run installs what's missing and downloads the models (~416 MB), then your
-browser opens the **Folio Processor**: drag in page scans, get cropped single-folio
-images back, and download them as a `.zip`.
-
-Prefer a terminal? `python run_app.py` does the same.
-
-**It uses your GPU automatically.** The launcher detects an NVIDIA GPU and installs a
-CUDA build of PyTorch (much faster for this workload); with no GPU it installs the CPU
-build. An existing torch is reused untouched, so it never downgrades a working setup.
-(50-series / Blackwell GPUs need `FOLIO_TORCH_INDEX=cu128 python run_app.py`.)
+The launcher installs what's missing and opens the same web app. **It uses your GPU
+automatically** — it detects an NVIDIA GPU and installs a CUDA build of PyTorch (much
+faster for large batches); with no GPU it installs the CPU build, and an existing torch
+is reused untouched. (50-series / Blackwell GPUs: `FOLIO_TORCH_INDEX=cu128 python run_app.py`.)
 
 ## Three ways to run it
 
