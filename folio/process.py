@@ -106,11 +106,30 @@ def build_pipeline(cfg: PipelineConfig, legacy_weights: Optional[str],
             mode = _attach_ocr_rescue(pipe, cfg, mode)
         return pipe, _attach_blank(pipe, cfg, mode)
 
+    # No legacy .pth found. Still use the TRAINED heads (orientation, count) and the
+    # learned page segmenter whenever their weights are present -- they don't need the
+    # legacy models, they were just historically wired to that path. This is what a
+    # weights-only install (e.g. the packaged app) runs on: learned-seg crop + trained
+    # 4-way orientation + trained count, only falling back to classical stand-ins for
+    # whatever weight is genuinely missing.
     from .models.classical import (ClassicalSegmenter, ClassicalCounter,
                                     ClassicalOrienter)
+    counter, orienter, tags = ClassicalCounter(), ClassicalOrienter(), []
+    if Path(cfg.model.folio_count_weights).exists():
+        from .models.classifiers import FolioCountClassifier
+        counter = FolioCountClassifier(cfg.model); tags.append("trained-count")
+    if orient_ok:
+        from .models.classifiers import OrientationClassifier
+        orienter = OrientationClassifier(cfg.model); tags.append("trained-4way-orient")
     pipe = FolioPipeline(cfg, segmenter=ClassicalSegmenter(cfg.model),
-                         counter=ClassicalCounter(), orienter=ClassicalOrienter())
-    return pipe, _attach_blank(pipe, cfg, "classical (no legacy weights found)")
+                         counter=counter, orienter=orienter)
+    if orient_ok and prepass:
+        pipe.coarse_orienter = orienter
+        tags.append("landscape pre-pass")
+    mode = " + ".join(tags) if tags else "classical (no learned weights found)"
+    if orient_ok:
+        mode = _attach_ocr_rescue(pipe, cfg, mode)
+    return pipe, _attach_blank(pipe, cfg, mode)
 
 
 def _attach_blank(pipe, cfg, mode: str) -> str:
@@ -175,6 +194,8 @@ def make_config(device: Optional[str] = None,
         cfg.model.blank_weights = str(_REPO / cfg.model.blank_weights)
     if not Path(cfg.model.folio_seg_weights).is_absolute():
         cfg.model.folio_seg_weights = str(_REPO / cfg.model.folio_seg_weights)
+    if not Path(cfg.model.folio_count_weights).is_absolute():
+        cfg.model.folio_count_weights = str(_REPO / cfg.model.folio_count_weights)
     # External weights dir (e.g. next to a packaged .exe, or a shared mirror): if set,
     # every model weight is resolved by filename inside it. Takes final precedence.
     wdir = os.environ.get("FOLIO_WEIGHTS_DIR")

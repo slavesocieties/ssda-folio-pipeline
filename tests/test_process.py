@@ -75,9 +75,15 @@ def test_shard_partition_is_complete_and_disjoint():
     assert set(seen.values()) == {1}         # disjoint (each key once)
 
 
-def test_build_pipeline_classical_fallback():
-    """No legacy weights -> classical pipeline, no torch required."""
+def test_build_pipeline_classical_fallback(tmp_path):
+    """No legacy weights AND no trained weights -> pure classical, no torch required.
+    (With trained weights present, the no-legacy path upgrades to the trained heads;
+    that path is exercised by the end-to-end tests on a weights-equipped machine.)"""
     cfg = P.make_config(device="cpu")
+    missing = str(tmp_path / "absent.pt")            # simulate a machine with no weights
+    for attr in ("folio_seg_weights", "orientation_weights",
+                 "folio_count_weights", "blank_weights"):
+        setattr(cfg.model, attr, missing)
     pipe, mode = P.build_pipeline(cfg, legacy_weights=None, prepass=True)
     assert isinstance(pipe, FolioPipeline)
     assert "classical" in mode
