@@ -8,6 +8,33 @@ Replaces the legacy U-Net + `W//2` pipeline. Full design rationale and the
 math for every stage live in **[ARCHITECTURE.md](ARCHITECTURE.md)**; the
 end-user tool guide is **[README_TOOL.md](README_TOOL.md)**.
 
+## Run it as an app — no coding, no LLM
+
+The pipeline is a normal program. To use it like an ordinary app:
+
+1. Install **Python 3.10+** ([python.org](https://www.python.org/downloads/), tick
+   "Add Python to PATH").
+2. Download this repo (green **Code → Download ZIP**, then unzip) or `git clone` it.
+3. **Double-click `Run Folio App.bat`** (Windows) or `run_folio_app.command` (macOS).
+   The first run installs what's missing and downloads the models (~416 MB), then
+   your browser opens the **Folio Processor** — drag in page scans, get cropped
+   single-folio images back, and download them as a zip.
+
+That's the whole thing. Equivalent one-liner if you prefer a terminal:
+
+```bash
+python run_app.py           # sets up + opens http://127.0.0.1:8000
+```
+
+Already have the deps? Just: `pip install -r requirements-web.txt && folio-web`.
+There's also a drag-and-drop **desktop app** (`folio-gui` / `Folio Processor.bat`)
+and a **command line** (`folio scan.jpg`, or a whole folder) — see
+[README_TOOL.md](README_TOOL.md).
+
+> GPU is optional (auto-detected). The launcher reuses whatever Python/torch you
+> already have, so it won't overwrite a CUDA build; on a plain machine it runs on
+> CPU (slower, but works).
+
 ## Quick start
 
 ```bash

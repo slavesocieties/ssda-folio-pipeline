@@ -1,0 +1,2 @@
+# Extra dependency for the `folio-web` local web app (folio/webapp.py).
+flask>=3.0
