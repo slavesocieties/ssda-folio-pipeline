@@ -1,3 +1,0 @@
-[console_scripts]
-folio = folio.cli:main
-folio-gui = folio.gui:main
