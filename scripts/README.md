@@ -1,9 +1,35 @@
 # scripts/ — crop → transcribe workflow helpers
 
-Reproducible, secret-free helpers for taking cropped folios through the SSDA
-Archivault transcription API. No credentials are hard-coded: AWS uses your
-configured profile (`aws configure`), and the Archivault password comes from
-`$ARCHIVAULT_PASSWORD` or an interactive prompt.
+Reproducible, secret-free helpers. No credentials are hard-coded: AWS uses your
+configured *profile names* (`aws configure`), and the Archivault password comes
+from `$ARCHIVAULT_PASSWORD` or an interactive prompt.
+
+## `crop_volume_s3.py` — the production cropping runner
+
+The master script for the real workload: pull one **volume** from a source S3
+bucket, crop every image, and push the crops to a target S3 bucket — **across two
+AWS accounts**, streamed **in memory** (image bytes never hit local disk).
+
+```bash
+python scripts/crop_volume_s3.py \
+    --source-profile ssda-read  --source-bucket legacy-ssda-jpgs-...  --volume 176899 \
+    --target-profile ssda-write --target-bucket ssda-archivault-crops-... \
+    --write-coords --jobs 16
+```
+
+- **Source/target are AWS profile names** (two boto3 sessions) → different accounts, no keys in the script.
+- **`--volume`** is used as the source key prefix (override with `--source-prefix`).
+- **Approach B** (tight crop) by default; `--white-out` for A.
+- **`--write-coords`** also pushes a per-crop provenance JSON (crop → original-image quad).
+- **`--jobs N`** fans work across N CPU worker processes (the crop is CPU-bound; the
+  big throughput lever); `--jobs 1` uses the GPU in one process.
+- **`--dry-run`** lists the volume's keys and does nothing; **`--limit N`** for a smoke test.
+- **Scale-out** = one invocation per volume, so shard volumes across machines.
+
+It calls the pipeline (`folio.process.build_pipeline` → `pipe.process_image`), so to
+change the model just edit `folio/` or swap the weights — this script doesn't change.
+The desktop GUI (`folio-gui`) and web app (`folio-web`) are the QA front-ends over the
+same pipeline.
 
 ## End-to-end flow
 
