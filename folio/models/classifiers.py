@@ -52,11 +52,15 @@ class FolioCountClassifier:
     def predict(self, image: np.ndarray) -> Tuple[PageCount, float]:
         self._load()
         torch = self._torch
-        t = _preprocess(image, self.cfg.classifier_size)
+        dev = cfg_device(self.cfg)
+        t = _preprocess(image, self.cfg.classifier_size).to(dev)
         ar, valley = geometric_priors(image)
-        priors = torch.tensor([[ar, valley]], dtype=t.dtype, device=t.device)
+        # priors MUST share the model's device — on GPU the image was moving to
+        # cuda while priors stayed on cpu, so the aux Linear hit a cuda/cpu addmm
+        # mismatch (invisible on cpu-only boxes, which is why the exe never saw it).
+        priors = torch.tensor([[ar, valley]], dtype=t.dtype, device=dev)
         with torch.inference_mode():
-            logits = self._model(t.to(cfg_device(self.cfg)), priors)
+            logits = self._model(t, priors)
             probs = torch.softmax(logits, dim=1)[0].float().cpu().numpy()
         idx = int(probs.argmax())
         return self.CLASSES[idx], float(probs[idx])
