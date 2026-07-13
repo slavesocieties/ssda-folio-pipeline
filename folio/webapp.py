@@ -64,6 +64,8 @@ button:disabled{opacity:.5;cursor:default}
 .card .cap{font-size:.75rem;padding:.3rem .4rem;color:#666}.flag{color:#d97706}
 .bar{display:flex;gap:1rem;align-items:center;margin:1rem 0;flex-wrap:wrap}
 a.dl{display:inline-block}.mode{font-size:.75rem;color:#999}
+#skipped{margin-top:1rem}#skipped .s{background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.4);
+ border-radius:8px;padding:.5rem .8rem;margin:.4rem 0;font-size:.85rem}#skipped b{color:#d97706}
 </style></head><body>
 <h1>Folio Processor</h1>
 <p class=sub>Drop archival page scans &rarr; clean single-folio, upright, cropped images.</p>
@@ -71,24 +73,30 @@ a.dl{display:inline-block}.mode{font-size:.75rem;color:#999}
 <div class=bar><button id=go disabled>Process</button><span id=status></span></div>
 <div class=bar id=actions style=display:none><a class=dl id=zip href=#><button>Download all (.zip)</button></a>
 <span class=mode id=mode></span></div>
+<div id=skipped></div>
 <div class=grid id=grid></div>
 <script>
 const drop=document.getElementById('drop'),file=document.getElementById('file'),go=document.getElementById('go'),
  status=document.getElementById('status'),grid=document.getElementById('grid'),actions=document.getElementById('actions'),
- zip=document.getElementById('zip'),mode=document.getElementById('mode');let files=[];
+ zip=document.getElementById('zip'),mode=document.getElementById('mode'),skipped=document.getElementById('skipped');let files=[];
 drop.onclick=()=>file.click();
 file.onchange=()=>{files=[...file.files];status.textContent=files.length+' file(s) selected';go.disabled=!files.length};
 ['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
 ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over')}));
 drop.addEventListener('drop',ev=>{files=[...ev.dataTransfer.files].filter(f=>f.type.startsWith('image'));
  status.textContent=files.length+' file(s) selected';go.disabled=!files.length});
-go.onclick=async()=>{go.disabled=true;grid.innerHTML='';actions.style.display='none';
+go.onclick=async()=>{go.disabled=true;grid.innerHTML='';skipped.innerHTML='';actions.style.display='none';
  status.textContent='Processing '+files.length+' image(s)… (first run loads the models, ~20s)';
  const fd=new FormData();files.forEach(f=>fd.append('images',f));
  let r;try{r=await fetch('/process',{method:'POST',body:fd})}catch(e){status.textContent='Error: '+e;go.disabled=false;return}
  if(!r.ok){status.textContent='Error: '+(await r.text());go.disabled=false;return}
- const d=await r.json();status.textContent=d.folios.length+' folio crop(s) from '+d.images+' image(s)';
- mode.textContent=d.mode;zip.href='/zip/'+d.session;actions.style.display='flex';
+ const d=await r.json();
+ status.textContent=d.folios.length+' folio crop(s) from '+d.images+' image(s)'+(d.skipped&&d.skipped.length?', '+d.skipped.length+' skipped':'');
+ mode.textContent=d.mode;
+ if(d.folios.length){zip.href='/zip/'+d.session;actions.style.display='flex'}
+ (d.skipped||[]).forEach(s=>{const e=document.createElement('div');e.className='s';
+  e.innerHTML='<b>&#9888; '+s.name+'</b> — '+s.reason;skipped.appendChild(e)});
+ if(!d.folios.length&&(!d.skipped||!d.skipped.length))status.textContent='No crops produced. Try a photo of a book/document page (JPG/PNG).';
  d.folios.forEach(f=>{const c=document.createElement('div');c.className='card';
   c.innerHTML='<img loading=lazy src="/file/'+d.session+'/'+encodeURIComponent(f.name)+'">'+
    '<div class=cap>'+f.name+(f.review?' <span class=flag>&#9873; review</span>':'')+'</div>';grid.appendChild(c)});
@@ -111,11 +119,16 @@ def process():
     outdir = _WORK / sid
     outdir.mkdir(parents=True, exist_ok=True)
     folios = []
+    skipped = []                     # files that produced no crop, with the reason
     n_img = 0
     for up in ups:
         data = np.frombuffer(up.read(), np.uint8)
         img = cv2.imdecode(data, cv2.IMREAD_COLOR)
         if img is None:
+            skipped.append({"name": up.filename,
+                            "reason": "could not read this file as an image "
+                                      "(unsupported format — use JPG, PNG or TIFF; "
+                                      "phone HEIC and PDF are not supported)"})
             continue
         n_img += 1
         stem = Path(up.filename).stem
@@ -123,12 +136,22 @@ def process():
             res = pipe.process_image(up.filename, img)
         except Exception as e:  # keep the app alive on a bad image
             app.logger.warning("failed on %s: %s", up.filename, e)
+            skipped.append({"name": up.filename, "reason": f"processing error: {type(e).__name__}: {e}"})
             continue
+        before = len(folios)
         for f in res.folios:
+            if f.crop is None:
+                continue
             name = f"{stem}{('-' + f.label) if f.label else ''}.jpg"
             cv2.imwrite(str(outdir / name), f.crop)
             folios.append({"name": name, "review": bool(getattr(f, "needs_review", False))})
-    return {"session": sid, "images": n_img, "mode": _MODE, "folios": folios}
+        if len(folios) == before:
+            pc = getattr(res.page_count, "value", "?")
+            reason = res.error or (f"no folio detected (page count: {pc}) — "
+                                   "is this a photo of a book/document page?")
+            skipped.append({"name": up.filename, "reason": reason})
+    return {"session": sid, "images": n_img, "mode": _MODE,
+            "folios": folios, "skipped": skipped}
 
 
 @app.route("/file/<sid>/<path:name>")
