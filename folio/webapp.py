@@ -38,14 +38,19 @@ _WORK = Path(tempfile.gettempdir()) / "folio_web"
 _WORK.mkdir(exist_ok=True)
 _PIPE = None
 _MODE = ""
+_PIPE_LOCK = threading.Lock()
 
 
 def _pipeline():
+    """Build the pipeline once, thread-safely. Preloaded at startup (see main) so the
+    first request never races on a cold model load."""
     global _PIPE, _MODE
     if _PIPE is None:
-        cfg = make_config()
-        lw = find_legacy_weights(None, str(Path(__file__).resolve().parent.parent))
-        _PIPE, _MODE = build_pipeline(cfg, lw)
+        with _PIPE_LOCK:
+            if _PIPE is None:                     # double-checked: only one thread builds
+                cfg = make_config()
+                lw = find_legacy_weights(None, str(Path(__file__).resolve().parent.parent))
+                _PIPE, _MODE = build_pipeline(cfg, lw)
     return _PIPE
 
 
@@ -184,9 +189,22 @@ def main(argv=None):
     args = ap.parse_args(argv)
     url = f"http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{args.port}"
     print(f"Folio Processor web app -> {url}")
-    print("Loading models (first request may take ~20s)…")
+    print("Loading models…  (one-time, ~20s — please wait for 'ready' before uploading)")
+    # Preload the pipeline BEFORE serving, so the very first upload can't fail on a cold
+    # model load (which is what made an early run produce no crops). Also warms EasyOCR's
+    # own model download if present, so nothing downloads mid-request.
+    try:
+        pipe = _pipeline()
+        ocr = getattr(pipe, "ocr_verifier", None)
+        if ocr is not None:
+            _ = ocr.available          # build EasyOCR reader now (downloads its models once)
+        print(f"ready: {_MODE}")
+    except Exception as e:
+        print(f"[!] model load failed: {type(e).__name__}: {e}\n"
+              "    Check that the weights are present (tools/fetch_weights.py) and re-run.")
+        return
     if not args.no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     app.run(host=args.host, port=args.port, threaded=True)
 
 
