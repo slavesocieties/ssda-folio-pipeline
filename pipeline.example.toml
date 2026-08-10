@@ -1,0 +1,106 @@
+# pipeline.example.toml — template for pipeline.toml.
+#
+#     cp pipeline.example.toml pipeline.toml     # then fill in the CHANGEME values
+#
+# scripts/run_prefix.py reads `pipeline.toml` so that a run is just:
+#     python scripts/run_prefix.py 176899
+#
+# The real pipeline.toml is gitignored: it names YOUR buckets, AWS profiles and
+# account, which are environment-specific. This template is the documented copy.
+#
+# NO SECRETS IN EITHER FILE. AWS auth is by *profile name* (from `aws configure`);
+# the Archivault password comes from $ARCHIVAULT_PASSWORD or an interactive prompt.
+
+[source]
+profile = "default"                       # AWS profile that can READ the source bucket
+bucket  = "CHANGEME-source-jpgs"
+# The source bucket is flat: keys are literally "{volume}-{0000}.jpg".
+# A run's prefix is the volume id; this suffix is appended to make the S3 prefix
+# so that volume "1768" cannot match "17689-0001.jpg".
+prefix_suffix = "-"
+
+[crops]
+profile = "CHANGEME-write-profile"        # AWS profile that can WRITE the crops bucket
+bucket  = "CHANGEME-crops-bucket"
+# Crop keys mirror the source keys exactly. A two-folio spread splits into
+# <stem>A.jpg (left/recto) and <stem>B.jpg (right/verso); a single folio keeps
+# the source key unchanged. Leave `prefix` empty to keep the bucket flat.
+prefix = ""
+
+[coords]
+# Per-crop provenance JSON (maps each crop back to a quad on the original image),
+# written to its OWN bucket. An empty `profile` falls back to the crops profile,
+# which is right when the two buckets share an account.
+enabled = false
+profile = ""
+bucket  = "CHANGEME-coords-bucket"
+# Coord keys mirror the crop keys with the image extension replaced, so the crop
+# "176899-0002A.jpg" gets "176899-0002A.json".
+# Leave `prefix` empty to keep the bucket flat, like the crops bucket.
+prefix  = ""
+
+[transcripts]
+# An empty profile means "use the crops profile" — NOT boto3's default credential
+# chain, which would be the source account and fails late with AccessDenied.
+profile = ""
+bucket  = "CHANGEME-transcripts-bucket"
+prefix  = ""                              # artifacts land at <prefix><volume>.<ext>
+# Run records live under their own key prefixes, so a listing of the bucket root is
+# just transcripts: manifest/<prefix><volume>.json and review/<prefix><volume>.json.
+# The review report (blank crops held back + crops flagged for review) is always
+# written; this toggles the manifest only.
+write_manifest = true
+
+[crop]
+jobs = 16                                 # CPU worker processes; the real bottleneck
+white_out = false                         # false = approach B (tight crop), the default
+device = ""                               # "" = auto for jobs=1, cpu for jobs>1
+# Partial-spread rescue: a volume shot part-way open yields one-folio crops that
+# drag in the partial facing leaf, come out too wide, and get flagged
+# `unexpected_aspect`. When true, such a crop is re-cut at the detected spine and
+# the complete folio kept (provenance quad adjusted to match); crops with no
+# confident spine, and covers/blanks, keep their flag untouched.
+# Calibrated on one volume only — re-check with tools/eval_partial_spread.py
+# before enabling corpus-wide.
+rescue_partial_spread = false
+
+[api]
+url = "https://d2vqeenx44rrj7.cloudfront.net"
+email = "you@example.edu"
+steps = ["foliate", "metadata", "transcribe", "ner"]
+delete_data = true                        # ask Archivault to drop its copy when done
+title_strip = ""                          # strip this leading string from the volume id
+
+[api.models]
+# Must be values submit_job.py's MODEL_OPTIONS accepts; run_prefix.py validates
+# these at startup rather than letting the API reject the job.
+transcription = "gemini-3.1-pro-preview"
+captioning    = "gemini-3.5-flash-lite"
+foliation     = "gemini-3.6-flash"
+aggregation   = "gemini-3.5-flash-lite"
+metadata      = "gemini-3.6-flash"
+ner           = "gemini-3.6-flash"
+
+[api.job]
+country = ""
+state = ""
+description = ""
+writing_style = ""
+language = ""
+time_period = ""
+layout_structure = ""
+non_textual_elements = []
+allow_subject_similarity = false
+# <= 500 characters (the API rejects longer; run_prefix.py checks at startup).
+transcription_instructions = """
+This is an image of a sacramental register. *Transcribe only the main body of \
+each entry in the register*, ignoring any identifying information in the \
+lefthand margin.\
+"""
+
+[api.transcription_preferences]
+expand_abbreviations = false
+preserve_line_breaks = true
+retain_punctuation_and_spelling = true
+normalize_to_modern_language = false
+ignore_marginalia = false

@@ -175,8 +175,13 @@ def _attach_ocr_rescue(pipe, cfg, mode: str) -> str:
 def make_config(device: Optional[str] = None,
                 orient_weights: Optional[str] = None,
                 tight_crop: bool = False, mask_background: bool = False,
-                crop_to_folio_mask: bool = True) -> PipelineConfig:
+                crop_to_folio_mask: bool = True,
+                rescue_partial_spread: Optional[bool] = None) -> PipelineConfig:
     cfg = PipelineConfig()
+    # None = leave the dataclass default alone, so callers that don't know about
+    # the flag cannot silently change behaviour.
+    if rescue_partial_spread is not None:
+        cfg.quality.rescue_partial_spread = bool(rescue_partial_spread)
     cfg.model.device = device or auto_device()
     cfg.geom.tight_crop = tight_crop
     # Default = approach B (tight bounding-box crop, no white-out): keeps every folio

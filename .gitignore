@@ -5,8 +5,13 @@ __pycache__/
 weights/
 *.pth
 *.pt
+# local run config: names YOUR buckets / AWS profiles / account.
+# The documented template is pipeline.example.toml, which IS tracked.
+pipeline.toml
+
 # scratch run outputs
 run_*/
+eval_partial_out/
 sample_out/
 eval_out/
 out/

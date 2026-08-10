@@ -87,21 +87,48 @@ def _clean(mask: np.ndarray) -> np.ndarray:
     return out
 
 
-def trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2):
+def _fg_col_mean(vals, mask):
+    """Per-column mean over foreground pixels; NaN for columns that have none.
+
+    Equivalent to masking the background to NaN and calling ``np.nanmean``, but
+    without the "Mean of empty slice" RuntimeWarning that an all-background
+    column raises. Such columns are expected (the page bbox is not the page), and
+    callers already substitute a median for the NaNs. Done arithmetically rather
+    than by filtering warnings, which would not be thread-safe.
+    """
+    cnt = mask.sum(axis=0)
+    tot = np.where(mask, vals, 0.0).sum(axis=0)
+    out = np.full(vals.shape[1], np.nan, np.float32)
+    nz = cnt > 0
+    out[nz] = tot[nz] / cnt[nz]
+    return out
+
+
+def _fg_median(vals, mask, default=0.0):
+    """Median over foreground pixels; `default` when the mask is empty."""
+    sel = vals[mask]
+    return float(np.median(sel)) if sel.size else float(default)
+
+
+def trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2,
+                       band: float = 0.22, max_strip: float = 0.16,
+                       prom_frac: float = 0.14):
     """If a single-page capture includes a thin strip of the FACING page along
     one outer edge (separated by a dark gutter), trim it off. Looks only in the
-    outer 22% bands and only removes a strip narrower than 25% of the width.
-    Returns a possibly-tightened (fx1, fx2).
+    outer `band` fraction and only removes a strip narrower than `max_strip` of
+    the width. Returns a possibly-tightened (fx1, fx2).
+
+    The defaults reproduce the original fixed thresholds; they are parameters so
+    that tools/eval_partial_spread.py can sweep them against a real volume.
     """
     region = gray[fy1:fy2 + 1, fx1:fx2 + 1].astype(np.float32)
     fgreg = fg[fy1:fy2 + 1, fx1:fx2 + 1].astype(bool)
-    region[~fgreg] = np.nan
     bw = fx2 - fx1
     if bw < 20:
         return fx1, fx2
-    with np.errstate(all="ignore"):
-        col = np.nanmean(region, axis=0)
-    med = float(np.nanmedian(col)) if np.isfinite(np.nanmedian(col)) else 0.0
+    col = _fg_col_mean(region, fgreg)
+    finite = col[np.isfinite(col)]
+    med = float(np.median(finite)) if finite.size else 0.0
     col = np.nan_to_num(col, nan=med)
     col_s = cv2.GaussianBlur(col.reshape(1, -1), (0, 0),
                              sigmaX=max(bw * 0.006, 1)).ravel()
@@ -119,23 +146,27 @@ def trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2):
         return band_lo + b, float(prom[b])
 
     new_l, new_r = fx1, fx2
-    # left band [0,0.22]
-    res = deepest(int(0.04 * bw), int(0.22 * bw))
-    if res and res[1] > 0.14 * med:
+    # left band [0.04, band]
+    res = deepest(int(0.04 * bw), int(band * bw))
+    if res and res[1] > prom_frac * med:
         new_l = fx1 + res[0]
-    # right band [0.78,0.96]
-    res = deepest(int(0.78 * bw), int(0.96 * bw))
-    if res and res[1] > 0.14 * med:
+    # right band [1-band, 0.96]
+    res = deepest(int((1.0 - band) * bw), int(0.96 * bw))
+    if res and res[1] > prom_frac * med:
         new_r = fx1 + res[0]
     # only accept trims that remove a NARROW strip (facing-page sliver)
-    if (new_l - fx1) > 0.16 * bw:
+    if (new_l - fx1) > max_strip * bw:
         new_l = fx1
-    if (fx2 - new_r) > 0.16 * bw:
+    if (fx2 - new_r) > max_strip * bw:
         new_r = fx2
     return new_l, new_r
 
 
-def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6
+def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
+                 spine_band: Tuple[float, float] = (0.32, 0.68),
+                 aspect_two: float = 1.15, aspect_two_valley: float = 1.05,
+                 valley_shadow: float = 0.92,
+                 trim_band: float = 0.22, trim_max_strip: float = 0.16,
                  ) -> Tuple[List[PageBox], np.ndarray, float]:
     """Return (page_boxes, foreground_mask, gutter_valley_ratio).
 
@@ -162,10 +193,8 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     region = gray[fy1:fy2+1, fx1:fx2+1].astype(np.float32)
     fgreg = fg[fy1:fy2+1, fx1:fx2+1].astype(bool)
-    region[~fgreg] = np.nan  # ignore background columns
-    with np.errstate(all="ignore"):
-        col = np.nanmean(region, axis=0)
-    col = np.nan_to_num(col, nan=float(np.nanmedian(region)))
+    col = _fg_col_mean(region, fgreg)  # background columns come back as NaN
+    col = np.nan_to_num(col, nan=_fg_median(region, fgreg))
     bw = fx2 - fx1
     col_s = cv2.GaussianBlur(col.reshape(1, -1), (0, 0),
                              sigmaX=max(bw * 0.008, 1)).ravel()
@@ -174,7 +203,7 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6
     # each candidate by its PROMINENCE: how much darker it is than the brighter
     # of its two flanks, sampled ~12% of the spread width to either side.
     off = max(int(0.12 * bw), 5)
-    lo, hi = int(0.32 * bw), int(0.68 * bw)
+    lo, hi = int(spine_band[0] * bw), int(spine_band[1] * bw)
     if hi > lo and col_s.size > 2 * off + 2:
         idx = np.arange(lo, hi)
         left_flank = col_s[np.clip(idx - off, 0, bw - 1)]
@@ -195,12 +224,13 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6
     aspect = (fx2 - fx1) / float(max(fy2 - fy1, 1))
     # Two folios when the spread is landscape; a shadow valley confirms it and
     # rescues borderline-aspect spreads. Single pages are portrait.
-    is_two = (aspect > 1.15) or (aspect > 1.05 and shadow < 0.92)
+    is_two = (aspect > aspect_two) or (aspect > aspect_two_valley and shadow < valley_shadow)
 
     if is_two:
         conf = float(np.clip(1.0 - shadow + 0.5, 0.5, 0.99))
         left = PageBox(fx1, fy1, valley_x, fy2, conf)
         right = PageBox(valley_x, fy1, fx2, fy2, conf)
         return [left, right], fg, shadow
-    tl, tr = trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2)
+    tl, tr = trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2,
+                                band=trim_band, max_strip=trim_max_strip)
     return [PageBox(tl, fy1, tr, fy2, 1.0)], fg, shadow

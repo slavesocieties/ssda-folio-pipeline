@@ -430,6 +430,29 @@ class FolioPipeline:
         if area_frac < q.min_page_area_frac:
             reasons.append("page_too_small")
         aspect = w / float(h)
+        if aspect > q.portrait_aspect_range[1] and getattr(q, "rescue_partial_spread", False):
+            # A book photographed part-way open: one complete folio plus the
+            # partial facing leaf. Re-cut at the spine and keep the complete
+            # folio. Declines (no confident spine, or a cover/blank) fall through
+            # and are flagged exactly as before.
+            from .stages.partial_spread import rescue_partial_spread
+            kept, new_quad, rinfo = rescue_partial_spread(
+                final, folio.crop_quad_norm,
+                aspect_hi=q.portrait_aspect_range[1],
+                target_aspect=q.partial_spread_target_aspect,
+                min_spine=q.partial_spread_min_spine)
+            folio.partial_spread = rinfo
+            if kept is not None:
+                folio.crop = final = kept
+                folio.crop_quad_norm = new_quad
+                h, w = final.shape[:2]
+                aspect = w / float(h)
+                # recorded as a review reason so a rescued crop stays auditable;
+                # drop this line once the rescue is trusted corpus-wide.
+                reasons.append("partial_spread_rescued")
+                # the blank verdict was taken on the pre-rescue crop
+                if self.blank_classifier is not None:
+                    folio.is_blank, folio.blank_conf = self.blank_classifier.predict(final)
         if not (q.portrait_aspect_range[0] <= aspect <= q.portrait_aspect_range[1]):
             reasons.append("unexpected_aspect")
 

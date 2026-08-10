@@ -48,6 +48,9 @@ class FolioResult:
     blank_conf: float = 0.0
     needs_review: bool = False
     review_reasons: List[str] = field(default_factory=list)
+    # partial-spread rescue verdict (folio.stages.partial_spread): why it fired or
+    # declined. None when the rescue is disabled or the crop was never over-wide.
+    partial_spread: Optional[dict] = None
     # ---- OCR orientation review-rescue (an independent text-legibility signal
     # consulted ONLY on folios the 4-way head flagged low_orientation_conf) ----
     ocr_rescued: bool = False        # OCR resolved the flip -> flag cleared

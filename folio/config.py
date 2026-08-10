@@ -110,6 +110,21 @@ class QualityConfig:
     # catch the known sparse-page failures; recall-oriented (a few correct sparse
     # pages are flagged too). Re-tune against a labelled validation set.
     min_text_frac_for_orient: float = 0.075
+    # Partial-spread rescue (folio.stages.partial_spread): a book photographed
+    # part-way open yields ONE folio whose crop drags in the partial facing leaf,
+    # coming out too wide. When enabled, a crop that would be flagged
+    # `unexpected_aspect` is re-cut at the detected spine, keeping the complete
+    # folio; a crop with no confident spine keeps its flag and is left untouched.
+    # OFF by default: calibrated on one volume (265705 — 9/10 hand-labelled
+    # correct, 0 wrong, 0 false fires on 60 controls), so confirm on a second
+    # volume before trusting it corpus-wide.
+    rescue_partial_spread: bool = False
+    # peak spine score / page median required to act. The calibration gap is
+    # narrow (worst correct 1.582, only known bad 1.416); lower = more rescues
+    # and more risk of a wrong cut.
+    partial_spread_min_spine: float = 1.5
+    # expected folio aspect (w/h); picks which side of the spine to keep.
+    partial_spread_target_aspect: float = 0.77
     # OCR orientation review-rescue: on a folio flagged ``low_orientation_conf``,
     # an independent OCR pass decides the up-vs-down flip. Two gates, because the
     # two actions carry very different risk (measured on a held-out labelled set,

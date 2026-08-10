@@ -74,7 +74,7 @@ def main():
     ap.add_argument("--title-strip", default="",
                     help="strip this leading string from each volume id to form the job title")
     ap.add_argument("--steps", nargs="+", default=["foliate", "metadata", "transcribe", "ner"])
-    ap.add_argument("--transcription-model", default="gemini-3.1-pro")
+    ap.add_argument("--transcription-model", default="gemini-3.1-pro-preview")
     ap.add_argument("--instructions", default=DEFAULT_INSTRUCTIONS,
                     help="project transcription instructions (<=500 chars)")
     ap.add_argument("--instructions-file", default=None,
