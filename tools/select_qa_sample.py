@@ -80,7 +80,7 @@ def main():
                      default=str(Path(__file__).resolve().parents[2] / "ssda-archivault" / "volumes.json"),
                      help="path to volumes.json (default: sibling ssda-archivault repo)")
     ap.add_argument("--sample-size", type=int, default=5000)
-    ap.add_argument("--cap", type=int, default=30,
+    ap.add_argument("--cap", type=int, default=15,
                      help="max pages drawn from any single volume")
     ap.add_argument("--seed", type=int, default=42, help="RNG seed, for a reproducible sample")
     ap.add_argument("--out", default="qa_samples/sample_manifest.csv")
