@@ -75,6 +75,8 @@ def main():
                     help="dir with legacy .pth files (for --hybrid)")
     ap.add_argument("--sam-fallback", action="store_true",
                     help="with --hybrid, escalate weak masks to SAM 2.1")
+    ap.add_argument("--no-ocr-rescue", action="store_true",
+                    help="skip the OCR up/down rescue (Stage 5d) for low_orientation_conf folios")
     args = ap.parse_args()
 
     indir = Path(args.input)
@@ -91,12 +93,24 @@ def main():
         cfg.model.folio_count_weights = os.path.join(wd, "folio_count_convnextv2.pt")
         cfg.model.orientation_weights = os.path.join(wd, "orientation4_convnextv2.pt")
 
+    # Stage 5d rescue for the one thing the 4-way head (and the legacy net) is
+    # near coin-flip on: 0-vs-180. Independent OCR-legibility signal, acts only
+    # on folios already flagged low_orientation_conf (see folio/stages/ocr_orient.py).
+    # Graceful: a missing easyocr install just leaves the pipeline exactly as
+    # it was (verifier.available == False), never an error.
+    ocr_verifier = None
+    if not args.no_ocr_rescue:
+        from folio.stages.ocr_orient import OCRUpDownVerifier
+        ocr_device = "cuda" if (args.neural or args.hybrid) and cfg.model.device == "cuda" else "cpu"
+        ocr_verifier = OCRUpDownVerifier(device=ocr_device)
+
     if args.hybrid:
         from folio.models.hybrid import build_hybrid_pipeline
         pipe = build_hybrid_pipeline(cfg, args.legacy_weights or args.weights_dir,
                                      device=cfg.model.device,
                                      use_sam_fallback=args.sam_fallback)
         seg = pipe.segmenter
+        pipe.ocr_verifier = ocr_verifier
     elif args.neural:
         # production path: foundation segmentation + trained heads
         from folio.models.segmentation import PageSegmenter
@@ -104,14 +118,16 @@ def main():
         seg = PageSegmenter(cfg.model)
         pipe = FolioPipeline(cfg, segmenter=seg,
                              counter=FolioCountClassifier(cfg.model),
-                             orienter=OrientationClassifier(cfg.model))
+                             orienter=OrientationClassifier(cfg.model),
+                             ocr_verifier=ocr_verifier)
     else:
         seg = ClassicalSegmenter(cfg.model, two_folio_valley=args.valley)
         orienter = (__import__("folio.models.osd_orient", fromlist=["OSDOrienter"]).OSDOrienter()
                     if args.osd else ClassicalOrienter())
         pipe = FolioPipeline(cfg, segmenter=seg,
                              counter=ClassicalCounter(two_folio_valley=args.valley),
-                             orienter=orienter)
+                             orienter=orienter,
+                             ocr_verifier=ocr_verifier)
 
     files = sorted([p for p in indir.iterdir()
                     if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".tif", ".tiff")])
