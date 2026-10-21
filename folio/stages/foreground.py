@@ -187,6 +187,7 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
                  aspect_two: float = 1.15, aspect_two_valley: float = 1.05,
                  valley_shadow: float = 0.92,
                  trim_band: float = 0.22, trim_max_strip: float = 0.16,
+                 strong_spine_prom_frac: float = 0.10,
                  ) -> Tuple[List[PageBox], np.ndarray, float]:
     """Return (page_boxes, foreground_mask, gutter_valley_ratio).
 
@@ -224,6 +225,7 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
     # of its two flanks, sampled ~12% of the spread width to either side.
     off = max(int(0.12 * bw), 5)
     lo, hi = int(spine_band[0] * bw), int(spine_band[1] * bw)
+    strong_spine = False
     if hi > lo and col_s.size > 2 * off + 2:
         idx = np.arange(lo, hi)
         left_flank = col_s[np.clip(idx - off, 0, bw - 1)]
@@ -237,14 +239,25 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
         # if no real dip stands out, treat as weak (low two-folio confidence)
         if prominence[best] < 0.04 * med:
             shadow = max(shadow, 0.95)
+        # A genuinely dark, sharp spine dip is strong evidence of a spread on its
+        # own, independent of the photographed frame's aspect ratio: a spread
+        # shot with generous background padding (zoomed out / centred on a
+        # portrait canvas) can have a fg-bbox aspect well under 1.0 even though
+        # the gutter shadow is unambiguous. Threshold calibrated against real
+        # single-page columns (prominence/med ~0.01-0.04, e.g. a faint ruled
+        # margin line) vs a confirmed padded two-page spread (~0.15) -- the two
+        # populations are comfortably separated.
+        strong_spine = prominence[best] > strong_spine_prom_frac * med
     else:
         shadow = 1.0
         valley_x = (fx1 + fx2) // 2
 
     aspect = (fx2 - fx1) / float(max(fy2 - fy1, 1))
     # Two folios when the spread is landscape; a shadow valley confirms it and
-    # rescues borderline-aspect spreads. Single pages are portrait.
-    is_two = (aspect > aspect_two) or (aspect > aspect_two_valley and shadow < valley_shadow)
+    # rescues borderline-aspect spreads. A STRONG valley rescues even a
+    # portrait-shaped fg-bbox (padded framing). Single pages are portrait.
+    is_two = (aspect > aspect_two) or (aspect > aspect_two_valley and shadow < valley_shadow) \
+        or (strong_spine and shadow < valley_shadow)
 
     if is_two:
         conf = float(np.clip(1.0 - shadow + 0.5, 0.5, 0.99))
