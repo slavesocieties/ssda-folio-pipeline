@@ -13,7 +13,7 @@ import numpy as np
 
 from .config import PipelineConfig
 from .schemas import ImageResult, FolioResult, PageBox, PageCount
-from .stages import spine, geometry, orient
+from .stages import spine, geometry, orient, foreground
 
 
 class FolioPipeline:
@@ -80,6 +80,22 @@ class FolioPipeline:
                 res.error = "rejected_non_page"
                 return res
 
+            # Cross-check: the trained counter has no independent second
+            # opinion (unlike orientation's OCR rescue), so a confident but
+            # wrong "one folio" call on a real spread ships un-flagged. When
+            # it says ONE, run the classical spine-shadow signal (cheap, no
+            # weights) as an independent check; a strong, unambiguous gutter
+            # it missed doesn't override the trained call (unvalidated to
+            # auto-flip) but does route the folio to human review instead of
+            # silently shipping a half/double-page crop.
+            count_disagrees = False
+            if count == PageCount.ONE:
+                try:
+                    classical_boxes, _, _ = foreground.detect_pages(image)
+                    count_disagrees = len(classical_boxes) == 2
+                except Exception:
+                    pass
+
             # Stage 3: detect + segment pages
             boxes = self.segmenter.detect(image, max_pages=2 if count == PageCount.TWO else 1)
             if not boxes:
@@ -98,10 +114,24 @@ class FolioPipeline:
             # Learned folio segmenter (precise, background-agnostic page boundary)
             # supersedes the legacy crop mask. It returns the whole paper region
             # (both pages on a spread); the seam split below divides it per folio.
+            # Sanity-gated against the classical mask: on a clean image the two
+            # agree closely (measured 53-91% of the classical mask's area covered
+            # by the learned one across varied volumes); an occlusion (a
+            # photographer's thumb, a stray shadow) can make the learned model
+            # segment a nonsense blob instead of the page (measured 15% on a
+            # confirmed-bad case) -- the two populations are comfortably
+            # separated, so when agreement is this low, trust the classical mask
+            # instead of a learned mask that may not be the page at all.
+            classical_union = np.zeros(image.shape[:2], np.uint8)
+            for m in masks:
+                classical_union |= m
             learned = None
             if self.folio_segmenter is not None:
                 lp = self.folio_segmenter.page_mask(image)
-                if lp.any() and float(lp.mean()) > 0.05:
+                classical_area = int(classical_union.sum())
+                agree = (float((lp.astype(bool) & classical_union.astype(bool)).sum())
+                        / classical_area) if classical_area else 0.0
+                if lp.any() and float(lp.mean()) > 0.05 and agree >= 0.40:
                     masks = [lp for _ in masks]
                     learned = lp   # precise page region, for the background white-out
 
@@ -145,6 +175,9 @@ class FolioPipeline:
                 folio = self._finish_page(image, mask, label, margin_frac=mfrac,
                                           white_mask=wmask)
                 if folio is not None:
+                    if count_disagrees and "count_disagrees_with_spine" not in folio.review_reasons:
+                        folio.review_reasons.append("count_disagrees_with_spine")
+                        folio.needs_review = True
                     # provenance: map the crop quad (in the possibly pre-rotated
                     # working frame) back to the ORIGINAL image, as [0,1] ratios.
                     if folio.crop_quad_norm is not None:
