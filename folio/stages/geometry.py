@@ -13,13 +13,33 @@ import numpy as np
 
 
 def largest_component_mask(mask: np.ndarray) -> np.ndarray:
-    """Keep only the largest connected foreground blob (drops speckle)."""
+    """Keep only the page's connected region (drops speckle).
+
+    A small occlusion across the page -- a photographer's thumb, a cast
+    shadow, a tear -- can cut the foreground mask into several disconnected
+    fragments; picking the single largest raw component then crops to
+    whichever fragment happens to be biggest, which can be a sliver or a
+    corner instead of the page. Bridge gaps up to ~3% of the mask's own
+    diagonal with a closing pass to decide which fragments belong to the same
+    page, but only ever KEEP pixels that were already foreground (the closed
+    mask selects components; the original mask supplies the pixels), so this
+    can only recover dropped page area, never invent new foreground.
+    """
     m = (mask > 0).astype(np.uint8)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     if n <= 1:
         return m
-    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    return (labels == largest).astype(np.uint8)
+    ys, xs = np.where(m > 0)
+    diag = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min())) if xs.size else 0.0
+    k = max(3, int(0.03 * diag) | 1)
+    closed = cv2.morphologyEx(m, cv2.MORPH_CLOSE,
+                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    n2, labels2, stats2, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+    if n2 <= 1:
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        return (labels == largest).astype(np.uint8)
+    largest2 = 1 + int(np.argmax(stats2[1:, cv2.CC_STAT_AREA]))
+    return (m & (labels2 == largest2)).astype(np.uint8)
 
 
 def oriented_page_quad(mask: np.ndarray, margin_frac: float = 0.015) -> np.ndarray:
