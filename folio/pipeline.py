@@ -493,19 +493,24 @@ class FolioPipeline:
         # AXIS but only coin-flip on the 180 up-vs-down, and the legacy net shares
         # that blind spot. An independent OCR legibility read resolves the flip:
         # on a folio flagged low_orientation_conf ONLY (so cost stays on the small
-        # uncertain minority). CONFIRM (keep orientation, clear flag) is low-risk
-        # and cleared at the confirm gate; OVERRIDE (rotate 180) is high-risk and
-        # requires the stricter override gate; a weak margin is left flagged.
+        # uncertain minority).
+        #
+        # CONFIRM-ONLY policy: clearing the flag when OCR agrees the current
+        # orientation is already upright is low-risk (observed clean on a 150-
+        # image control sample). AUTO-FLIPPING is not: on that same sample the
+        # one override case it attempted was a confident, wrong 180-flip of an
+        # already-upright page that then shipped unflagged -- silently wrong is
+        # worse than flagged, so OVERRIDE now only records a suspicion for a
+        # human to act on; it never rotates the crop or clears the flag itself.
         if self.ocr_verifier is not None and "low_orientation_conf" in reasons \
                 and self.ocr_verifier.available:
             should_flip, margin = self.ocr_verifier.flip_verdict(folio.crop)
-            gate = q.ocr_override_margin if should_flip else q.ocr_confirm_margin
-            if margin >= gate:
+            if should_flip:
+                if margin >= q.ocr_override_margin:
+                    folio.ocr_margin = float(margin)
+                    folio.ocr_suspected_flip = True
+            elif margin >= q.ocr_confirm_margin:
                 folio.ocr_margin = float(margin)
-                if should_flip:
-                    folio.crop = np.ascontiguousarray(np.rot90(folio.crop, 2))
-                    folio.rotation_deg = (folio.rotation_deg + 180.0) % 360.0
-                    folio.ocr_flipped = True
                 folio.ocr_rescued = True
                 reasons.remove("low_orientation_conf")
 
