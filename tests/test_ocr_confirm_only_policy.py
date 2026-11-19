@@ -34,6 +34,13 @@ class AmbiguousOrienter:
         return np.array([0.55, 0.0, 0.45, 0.0])
 
 
+class ConfidentOrienter:
+    """Confident upright call -> no low_orientation_conf, isolating
+    low_text_for_orientation as the only trigger."""
+    def predict_probs(self, image):
+        return np.array([0.97, 0.01, 0.01, 0.01])
+
+
 class StubOCR:
     def __init__(self, should_flip, margin):
         self.available = True
@@ -49,10 +56,18 @@ def _dense_page(h=420, w=300, fill=235):
     return img
 
 
-def _pipe(ocr_verifier):
+def _sparse_page(h=420, w=300, fill=235):
+    """Portrait page with almost no ink -> low_text_for_orientation, but a
+    confident orienter call so low_orientation_conf never fires."""
+    img = np.full((h, w, 3), fill, np.uint8)
+    img[200:202, 100:140] = 30          # a few sparse pixels, well under the gate
+    return img
+
+
+def _pipe(ocr_verifier, orienter=None):
     cfg = PipelineConfig()
     p = FolioPipeline(cfg, segmenter=FullSegmenter(), counter=OneCounter(),
-                      orienter=AmbiguousOrienter())
+                      orienter=orienter or AmbiguousOrienter())
     p.ocr_verifier = ocr_verifier
     return p
 
@@ -92,3 +107,32 @@ def test_weak_margin_leaves_flag_untouched():
     f = res.folios[0]
     assert "low_orientation_conf" in f.review_reasons
     assert f.ocr_rescued is False
+
+
+def test_ocr_rescue_also_fires_on_low_text_alone():
+    """low_text_for_orientation is a crude pixel-ink-fraction heuristic that
+    undercounts real content on some pages (confirmed visually in production:
+    82% of flagged folios aren't classified blank). OCR reading actual text
+    should be able to confirm these even with no low_orientation_conf flag."""
+    img = _sparse_page()
+    baseline = FolioPipeline(PipelineConfig(), segmenter=FullSegmenter(),
+                             counter=OneCounter(), orienter=ConfidentOrienter())
+    before = baseline.process_image("x.jpg", img.copy()).folios[0]
+    assert "low_text_for_orientation" in before.review_reasons
+    assert "low_orientation_conf" not in before.review_reasons   # isolates the trigger
+
+    pipe = _pipe(StubOCR(should_flip=False, margin=0.9), orienter=ConfidentOrienter())
+    res = pipe.process_image("x.jpg", img.copy())
+    f = res.folios[0]
+    assert "low_text_for_orientation" not in f.review_reasons
+    assert f.ocr_rescued is True
+
+
+def test_low_text_override_still_never_auto_applies():
+    img = _sparse_page()
+    pipe = _pipe(StubOCR(should_flip=True, margin=0.9), orienter=ConfidentOrienter())
+    res = pipe.process_image("x.jpg", img.copy())
+    f = res.folios[0]
+    assert "low_text_for_orientation" in f.review_reasons
+    assert f.ocr_rescued is False
+    assert f.ocr_suspected_flip is True

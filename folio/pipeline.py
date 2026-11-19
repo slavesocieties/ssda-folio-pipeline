@@ -491,18 +491,28 @@ class FolioPipeline:
 
         # Stage 5d: OCR orientation review-rescue. The 4-way head is ~99% on the
         # AXIS but only coin-flip on the 180 up-vs-down, and the legacy net shares
-        # that blind spot. An independent OCR legibility read resolves the flip:
-        # on a folio flagged low_orientation_conf ONLY (so cost stays on the small
-        # uncertain minority).
+        # that blind spot. An independent OCR legibility read resolves the flip.
         #
-        # CONFIRM-ONLY policy: clearing the flag when OCR agrees the current
+        # Runs on low_orientation_conf OR low_text_for_orientation. The text-frac
+        # gate is a crude pixel-ink-fraction heuristic, not a content detector: on
+        # the corpus, 82% of folios it flags are NOT classified blank by the
+        # trained blank-page model -- dense, normal pages whose ink the pixel
+        # measure undercounts (checked several visually: full pages of cursive
+        # script scoring just under the cutoff). OCR reads actual characters, so
+        # it's exactly the right independent check for "is there real text here",
+        # not just "is the current rotation legible". A genuinely blank page still
+        # yields no OCR signal and stays flagged, so this costs nothing there.
+        #
+        # CONFIRM-ONLY policy: clearing a flag when OCR agrees the current
         # orientation is already upright is low-risk (observed clean on a 150-
         # image control sample). AUTO-FLIPPING is not: on that same sample the
         # one override case it attempted was a confident, wrong 180-flip of an
         # already-upright page that then shipped unflagged -- silently wrong is
         # worse than flagged, so OVERRIDE now only records a suspicion for a
-        # human to act on; it never rotates the crop or clears the flag itself.
-        if self.ocr_verifier is not None and "low_orientation_conf" in reasons \
+        # human to act on; it never rotates the crop or clears a flag itself.
+        ocr_trigger_reasons = ("low_orientation_conf", "low_text_for_orientation")
+        if self.ocr_verifier is not None \
+                and any(r in reasons for r in ocr_trigger_reasons) \
                 and self.ocr_verifier.available:
             should_flip, margin = self.ocr_verifier.flip_verdict(folio.crop)
             if should_flip:
@@ -512,7 +522,9 @@ class FolioPipeline:
             elif margin >= q.ocr_confirm_margin:
                 folio.ocr_margin = float(margin)
                 folio.ocr_rescued = True
-                reasons.remove("low_orientation_conf")
+                for r in ocr_trigger_reasons:
+                    if r in reasons:
+                        reasons.remove(r)
 
         folio.needs_review = len(reasons) > 0
         folio.review_reasons = reasons
