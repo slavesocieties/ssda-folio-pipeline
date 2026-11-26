@@ -23,6 +23,33 @@ def test_oriented_quad_covers_mask_with_margin():
     assert ys.min() <= 40 and ys.max() >= 160
 
 
+def test_oriented_quad_fits_true_trapezoid_under_perspective():
+    """A page photographed at a real angle (not just in-plane rotation) has a
+    genuinely trapezoidal outline that no rotated rectangle can represent.
+    Confirmed on a real keystoned crop from the corpus: minAreaRect either
+    clips real content or pads in background. The quad fit should recover the
+    actual corners, not the bounding rectangle."""
+    m = np.zeros((200, 300), np.uint8)
+    true_quad = np.array([[60, 40], [240, 40], [210, 160], [90, 160]], np.int32)
+    cv2.fillPoly(m, [true_quad], 1)
+    quad = geometry.oriented_page_quad(m, margin_frac=0.0)
+    assert np.allclose(quad, true_quad, atol=1.0)
+    # a minAreaRect fit would have to be at least as wide as the top edge
+    # (240-60=180) by the full height (120) -- the true trapezoid is smaller
+    rect_area = 180 * 120
+    assert cv2.contourArea(quad.astype(np.float32)) < 0.9 * rect_area
+
+
+def test_oriented_quad_keeps_rect_path_for_ordinary_pages():
+    """An ordinary (non-keystoned) page must still use the plain rotated-rect
+    fit -- the quad path only activates on real perspective distortion."""
+    m = np.zeros((200, 300), np.uint8)
+    m[40:160, 60:240] = 1
+    quad = geometry.oriented_page_quad(m, margin_frac=0.0)
+    expected = np.array([[60, 40], [239, 40], [239, 159], [60, 159]], np.float32)
+    assert np.allclose(quad, expected, atol=1.0)
+
+
 def test_quarter_turn_dims():
     M, w, h = geometry.quarter_turn_matrix(1, 300, 200)
     assert (w, h) == (200, 300)  # 90deg swaps dims

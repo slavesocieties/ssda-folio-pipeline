@@ -42,22 +42,68 @@ def largest_component_mask(mask: np.ndarray) -> np.ndarray:
     return (m & (labels2 == largest2)).astype(np.uint8)
 
 
-def oriented_page_quad(mask: np.ndarray, margin_frac: float = 0.015) -> np.ndarray:
-    """Return the 4 corners (TL,TR,BR,BL) of the page's oriented bounding box,
-    expanded outward by ``margin_frac`` of the page diagonal.
+def oriented_page_quad(mask: np.ndarray, margin_frac: float = 0.015,
+                       fill_ratio_thresh: float = 0.92) -> np.ndarray:
+    """Return the 4 corners (TL,TR,BR,BL) of the page's boundary, expanded
+    outward by ``margin_frac`` of the page diagonal.
+
+    Normally a rotated rectangle (``cv2.minAreaRect``), which is the right fit
+    for an ordinary photo and the one this has always used. But a photo taken
+    at a real angle (not just in-plane rotation) gives a genuinely trapezoidal
+    page outline -- no rotated rectangle can represent that, so it either
+    clips page content on one side or pads in background on the other. Such a
+    page measurably fills LESS of its own minAreaRect than a normal one does
+    (checked on a confirmed keystoned crop: ~0.88, vs ~0.95+ on ordinary
+    pages), so only attempt a true 4-point quadrilateral fit when the fill
+    ratio drops below ``fill_ratio_thresh`` -- the common rectangular case is
+    left exactly as it was.
     """
     m = largest_component_mask(mask)
     cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
         h, w = mask.shape[:2]
         return np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
-    rect = cv2.minAreaRect(max(cnts, key=cv2.contourArea))  # ((cx,cy),(w,h),angle)
+    c = max(cnts, key=cv2.contourArea)
+    rect = cv2.minAreaRect(c)  # ((cx,cy),(w,h),angle)
     (cx, cy), (rw, rh), ang = rect
-    diag = float(np.hypot(rw, rh))
+    rect_area = max(rw * rh, 1.0)
+    contour_area = cv2.contourArea(c)
+
+    quad = None
+    if contour_area / rect_area < fill_ratio_thresh:
+        hull = cv2.convexHull(c)
+        peri = cv2.arcLength(hull, True)
+        for eps_frac in (0.01, 0.02, 0.03, 0.05, 0.08):
+            approx = cv2.approxPolyDP(hull, eps_frac * peri, True)
+            if len(approx) == 4:
+                cand = approx.reshape(4, 2).astype(np.float32)
+                # never settle for a degenerate/clipped fit -- the quad must
+                # still cover nearly all of the real page
+                if cv2.contourArea(cand) >= 0.85 * contour_area:
+                    quad = cand
+                break
+
+    if quad is None:
+        diag = float(np.hypot(rw, rh))
+        grow = margin_frac * diag
+        rect_grown = ((cx, cy), (rw + 2 * grow, rh + 2 * grow), ang)
+        box = cv2.boxPoints(rect_grown)            # 4x2, arbitrary order
+        return _order_quad(box.astype(np.float32))
+
+    return _grow_quad(_order_quad(quad), margin_frac)
+
+
+def _grow_quad(quad: np.ndarray, margin_frac: float) -> np.ndarray:
+    """Expand a quad outward from its centroid by margin_frac of its diagonal
+    (radial growth -- a simple, robust equivalent of the rotated-rect path's
+    per-edge dilation for an arbitrary, possibly non-rectangular quad)."""
+    diag = float(max(np.linalg.norm(quad[2] - quad[0]), np.linalg.norm(quad[3] - quad[1])))
     grow = margin_frac * diag
-    rect_grown = ((cx, cy), (rw + 2 * grow, rh + 2 * grow), ang)
-    box = cv2.boxPoints(rect_grown)            # 4x2, arbitrary order
-    return _order_quad(box.astype(np.float32))
+    c = quad.mean(axis=0)
+    d = quad - c
+    n = np.linalg.norm(d, axis=1, keepdims=True)
+    unit = np.divide(d, n, out=np.zeros_like(d), where=n > 1e-6)
+    return (quad + unit * grow).astype(np.float32)
 
 
 def _order_quad(pts: np.ndarray) -> np.ndarray:
