@@ -84,15 +84,33 @@ class FolioPipeline:
             # opinion (unlike orientation's OCR rescue), so a confident but
             # wrong "one folio" call on a real spread ships un-flagged. When
             # it says ONE, run the classical spine-shadow signal (cheap, no
-            # weights) as an independent check; a strong, unambiguous gutter
-            # it missed doesn't override the trained call (unvalidated to
-            # auto-flip) but does route the folio to human review instead of
-            # silently shipping a half/double-page crop.
+            # weights) as an independent check.
+            #
+            # Checked on 173 real disagreements from the corpus: the signal's
+            # own `strong_spine` flag (a genuinely dark, sharp gutter dip, not
+            # just a landscape-shaped frame) cleanly separates real missed
+            # spreads from false triggers -- 138 cases sat smoothly above the
+            # strong_spine cutoff (visually confirmed several: real two-page
+            # spreads the trained model missed), while 35 sat near zero
+            # (visually confirmed: single pages shot in a landscape frame, and
+            # book-spine/cover photos the classical heuristic mistook for a
+            # gutter -- splitting either of those would actively wreck an
+            # already-correct crop). So: trust and act on strong_spine, but a
+            # disagreement with only a weak/aspect-only signal still just gets
+            # flagged, never auto-split.
             count_disagrees = False
+            count_auto_corrected = False
             if count == PageCount.ONE:
                 try:
-                    classical_boxes, _, _ = foreground.detect_pages(image)
-                    count_disagrees = len(classical_boxes) == 2
+                    classical_boxes, _, shadow, strong_spine = foreground.detect_pages(image)
+                    if len(classical_boxes) == 2:
+                        if strong_spine:
+                            count = PageCount.TWO
+                            cconf = float(np.clip(1.0 - shadow + 0.5, 0.5, 0.99))
+                            res.page_count, res.count_conf = count, cconf
+                            count_auto_corrected = True
+                        else:
+                            count_disagrees = True
                 except Exception:
                     pass
 
@@ -177,6 +195,12 @@ class FolioPipeline:
                 if folio is not None:
                     if count_disagrees and "count_disagrees_with_spine" not in folio.review_reasons:
                         folio.review_reasons.append("count_disagrees_with_spine")
+                        folio.needs_review = True
+                    if count_auto_corrected and "count_auto_corrected_to_two" not in folio.review_reasons:
+                        # recorded as a review reason so the correction stays
+                        # auditable, same as partial_spread_rescued -- drop
+                        # this line once the correction is trusted corpus-wide.
+                        folio.review_reasons.append("count_auto_corrected_to_two")
                         folio.needs_review = True
                     # provenance: map the crop quad (in the possibly pre-rotated
                     # working frame) back to the ORIGINAL image, as [0,1] ratios.

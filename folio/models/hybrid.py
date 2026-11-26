@@ -94,7 +94,7 @@ class LegacyCountAdapter:
         label, conf = self._m.predict(image)
         # tie-break low-confidence calls with the geometric signal
         if conf < 0.75:
-            _, _, shadow = foreground.detect_pages(image)
+            _, _, shadow, _ = foreground.detect_pages(image)
             h, w = image.shape[:2]
             geo_two = (w > 1.15 * h) or (w > 1.05 * h and shadow < 0.92)
             label = "two_folios" if geo_two else "one_folio"

@@ -188,18 +188,29 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
                  valley_shadow: float = 0.92,
                  trim_band: float = 0.22, trim_max_strip: float = 0.16,
                  strong_spine_prom_frac: float = 0.10,
-                 ) -> Tuple[List[PageBox], np.ndarray, float]:
-    """Return (page_boxes, foreground_mask, gutter_valley_ratio).
+                 ) -> Tuple[List[PageBox], np.ndarray, float, bool]:
+    """Return (page_boxes, foreground_mask, gutter_valley_ratio, strong_spine).
 
     Decides 1 vs 2 pages from the depth of a central vertical valley in the
     foreground column profile. Boxes are split at the valley; spine.detect_gutter
     later refines the exact (curved) seam.
+
+    ``strong_spine`` is True only when a genuinely dark, sharp spine dip was
+    found (prominence/med exceeds ``strong_spine_prom_frac``) -- independent of
+    which condition actually triggered ``is_two``. This is the one signal in
+    this function safe to act on automatically: on 173 real cases where the
+    trained page-count model disagreed with this function, prominence/med
+    showed a clean, wide gap at ~0.10 (138 cases smoothly above it, 35 cases
+    at <0.08 down to ~0) separating real spreads from false triggers -- a
+    plain landscape aspect ratio alone (single pages shot in a landscape
+    frame, or a book-spine/cover photo misread as a page) is NOT reliable
+    enough on its own to split on.
     """
     h, w = image.shape[:2]
     fg = foreground_mask(image)
     comps = _largest_components(fg, min_area_frac=0.05, top_k=4)
     if not comps:
-        return [], fg, 1.0
+        return [], fg, 1.0, False
 
     # overall foreground bbox
     xs = np.where(fg.any(axis=0))[0]
@@ -263,7 +274,7 @@ def detect_pages(image: np.ndarray, two_folio_valley: float = 0.6,
         conf = float(np.clip(1.0 - shadow + 0.5, 0.5, 0.99))
         left = PageBox(fx1, fy1, valley_x, fy2, conf)
         right = PageBox(valley_x, fy1, fx2, fy2, conf)
-        return [left, right], fg, shadow
+        return [left, right], fg, shadow, strong_spine
     tl, tr = trim_facing_sliver(gray, fg, fx1, fy1, fx2, fy2,
                                 band=trim_band, max_strip=trim_max_strip)
-    return [PageBox(tl, fy1, tr, fy2, 1.0)], fg, shadow
+    return [PageBox(tl, fy1, tr, fy2, 1.0)], fg, shadow, strong_spine

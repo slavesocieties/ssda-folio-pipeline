@@ -41,11 +41,11 @@ class ClassicalSegmenter:
         return self._cache[key]
 
     def detect(self, image: np.ndarray, max_pages: int = 2) -> List[PageBox]:
-        boxes, _, _ = self._analyze(image)
+        boxes, _, _, _ = self._analyze(image)
         return boxes[:max_pages]
 
     def segment(self, image: np.ndarray, boxes: List[PageBox]) -> List[np.ndarray]:
-        _, fg, _ = self._analyze(image)
+        _, fg, _, _ = self._analyze(image)
         out = []
         for b in boxes:
             x1, y1, x2, y2 = b.as_tuple()
@@ -85,7 +85,7 @@ class ClassicalCounter:
         self.two_folio_valley = two_folio_valley
 
     def predict(self, image: np.ndarray) -> Tuple[PageCount, float]:
-        boxes, fg, valley = foreground.detect_pages(image, self.two_folio_valley)
+        boxes, fg, valley, _ = foreground.detect_pages(image, self.two_folio_valley)
         if not boxes:
             return PageCount.REJECT, 0.5
         # near-blank reject: very little ink relative to paper area
