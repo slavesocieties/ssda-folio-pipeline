@@ -293,11 +293,26 @@ def _ensure_dirs(out: Path) -> None:
         (out / sub).mkdir(parents=True, exist_ok=True)
 
 
-def write_manifest(out: Path, stats: RunStats) -> None:
+def write_manifest(out: Path, stats: RunStats, merge: bool = False) -> None:
+    """Write manifest.csv. ``merge=True`` (used by --resume) folds in any
+    existing manifest.csv's rows for sources NOT in this run's stats first --
+    otherwise a resumed run whose job only covers the not-yet-done images
+    would overwrite the file down to just its own slice, discarding every
+    earlier resumed invocation's rows even though their crops/sidecars are
+    still on disk (confirmed happening in practice across a long, repeatedly
+    interrupted run: the final manifest only reflected the last invocation)."""
+    rows = list(stats.manifest)
+    if merge:
+        existing_path = out / "manifest.csv"
+        if existing_path.exists():
+            with open(existing_path, newline="", encoding="utf-8") as fh:
+                existing = list(csv.DictReader(fh))
+            new_sources = {r["source"] for r in rows}
+            rows = [r for r in existing if r["source"] not in new_sources] + rows
     with open(out / "manifest.csv", "w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS)
         wtr.writeheader()
-        wtr.writerows(stats.manifest)
+        wtr.writerows(rows)
 
 
 # ---------------------------------------------------------------- parallel worker
@@ -384,7 +399,7 @@ def run_local(input_path, out, *, device=None, legacy=None, prepass=True,
             if on_item:
                 on_item(i, len(files), p.name, res)
 
-    write_manifest(out, stats)
+    write_manifest(out, stats, merge=resume)
     return stats, mode
 
 

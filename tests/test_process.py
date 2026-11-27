@@ -1,4 +1,5 @@
 """Unit tests for the folio.process driver helpers (no torch/GPU/weights)."""
+import csv
 import os
 import numpy as np
 import cv2
@@ -90,16 +91,44 @@ def test_build_pipeline_classical_fallback(tmp_path):
     assert pipe.coarse_orienter is None  # no pre-pass without a neural head
 
 
+def _make_page(fill=235, text=200):
+    img = np.full((400, 300, 3), fill, np.uint8)
+    img[60:340, 40:260] = text
+    for y in range(80, 320, 24):
+        img[y:y + 3, 60:240] = 40
+    return img
+
+
+def test_resumed_run_merges_manifest_instead_of_overwriting(tmp_path, monkeypatch):
+    """A resumed run only re-processes the not-yet-done images, so its own
+    stats.manifest only covers those -- writing that alone would discard
+    every earlier invocation's rows even though their crops/sidecars are
+    still on disk. Confirmed happening in practice across a long run
+    interrupted and resumed many times: the final manifest only reflected
+    the last invocation's slice."""
+    monkeypatch.setattr(P, "find_legacy_weights", lambda *a, **k: None)
+    for name in ("a", "b"):
+        cv2.imwrite(str(tmp_path / f"{name}.jpg"), _make_page())
+    out = tmp_path / "out"
+
+    # first invocation: only "a" (simulates it being interrupted before "b")
+    P.run_local(tmp_path / "a.jpg", out, device="cpu", legacy=None, tight_crop=False)
+    assert {r["source"] for r in csv.DictReader(open(out / "manifest.csv"))} == {"a.jpg"}
+
+    # resumed invocation over the whole folder: "a" is skipped, only "b" runs
+    stats, _ = P.run_local(tmp_path, out, device="cpu", legacy=None,
+                           tight_crop=False, resume=True)
+    assert stats.images == 1   # confirms "a" really was skipped, not reprocessed
+    sources = {r["source"] for r in csv.DictReader(open(out / "manifest.csv"))}
+    assert sources == {"a.jpg", "b.jpg"}   # both rows present, not just this run's
+
+
 def test_run_local_classical_end_to_end(tmp_path, monkeypatch):
     """A whole local run on a synthetic page produces a crop, sidecar, manifest.
     Force classical (no weights) so the test is hermetic on any machine."""
     monkeypatch.setattr(P, "find_legacy_weights", lambda *a, **k: None)
-    img = np.full((400, 300, 3), 235, np.uint8)
-    img[60:340, 40:260] = 200            # a page region
-    for y in range(80, 320, 24):         # some 'text' rows
-        img[y:y + 3, 60:240] = 40
     src = tmp_path / "page.jpg"
-    cv2.imwrite(str(src), img)
+    cv2.imwrite(str(src), _make_page())
     out = tmp_path / "out"
     # tight_crop=False keeps the test hermetic (no EasyOCR / GPU dependency)
     stats, mode = P.run_local(src, out, device="cpu", legacy=None, tight_crop=False)
