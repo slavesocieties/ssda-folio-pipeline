@@ -55,7 +55,8 @@ def foreground_mask(image: np.ndarray) -> np.ndarray:
 
     Strategy: estimate background from a border frame, threshold the per-pixel
     colour distance from it; if that fails (paper ~ background, e.g. white page
-    on a white desk), fall back to an ink/edge-density mask.
+    on a white desk), fall back to an ink/edge-density mask; if THAT also fails
+    its own sanity bound, fall back to the full frame rather than nothing.
     """
     h, w = image.shape[:2]
     bgr = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -77,8 +78,21 @@ def foreground_mask(image: np.ndarray) -> np.ndarray:
     if cover < 0.15 or cover > 0.97:
         # low contrast paper-vs-bg: fall back to ink/edge density
         fg2 = _ink_edge_mask(bgr)
-        if 0.15 <= fg2.mean() / 255.0 <= 0.99:
+        fg2_cover = fg2.mean() / 255.0
+        if 0.15 <= fg2_cover <= 0.99:
             fg = fg2
+        elif cover < 0.15:
+            # Neither signal found a trustworthy boundary. Seen on real,
+            # severely degraded pages (tears, insect damage, heavy staining)
+            # whose colour barely differs from the background AND whose
+            # damage texture floods Canny edge density past the ink
+            # fallback's own sanity bound (measured ~99.5-99.8% on three
+            # such pages) -- returning an empty mask here means the pipeline
+            # produces ZERO output for a real page (no_page_detected), total
+            # content loss. A loose full-frame crop (minus a thin border)
+            # still preserves the content; that beats dropping it silently.
+            fg = np.zeros((h, w), np.uint8)
+            fg[b:h - b, b:w - b] = 255
     return (fg > 0).astype(np.uint8)
 
 
